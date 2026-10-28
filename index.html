@@ -1,0 +1,1278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Set bigger goals, see your pace and work ahead.">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font:14px/1.4 system-ui,-apple-system,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>Headway</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Headway">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one phone column. Overview = hairline list of goals with thin tick bars (pace marker).
+   Goal view = cards: pace chart, plan bars per week, months. Bottom dock for the main action; bottom sheets for forms.
+   Theme: light by default; dark is a setting in the app (data-app-theme on <html>), not the OS. */
+:root{
+  --bg:#FFFFFF; --card:#FFFFFF; --ink:#101114; --muted:#686A72; --line:#E3E4E8; --track:#EDEEF1; --ghost:#C9CCD3;
+  --accent:#2B59F0; --accent-text:#1F47C9; --accent-soft:rgba(43,89,240,.12); --on-accent:#FFFFFF;
+  --behind:#9A5800; --behind-soft:rgba(154,88,0,.12); --danger:#C2363F; --scrim:rgba(16,17,20,.36); --shadow:0 18px 50px rgba(16,17,20,.16);
+  --font:"Geist",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+:root[data-app-theme="dark"]{
+  --bg:#0C0D10; --card:#131419; --ink:#F1F2F4; --muted:#9A9CA4; --line:#26282E; --track:#202227; --ghost:#3E4148;
+  --accent:#5C83FF; --accent-text:#8AA6FF; --accent-soft:rgba(92,131,255,.2); --on-accent:#0C0D10;
+  --behind:#F0B45A; --behind-soft:rgba(240,180,90,.18); --danger:#FF7A7F; --scrim:rgba(0,0,0,.6); --shadow:0 18px 50px rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.4;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3,h4,p{margin:0}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:13px} .xs{font-size:12px}
+.st-ahead{color:var(--accent-text)} .st-behind{color:var(--behind)} .st-neutral,.st-done{color:var(--muted)}
+
+/* Shell */
+.app{max-width:560px;margin:0 auto;box-sizing:border-box;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));padding-block:20px calc(116px + env(safe-area-inset-bottom,0px))}
+#view{display:flex;flex-direction:column;gap:24px}
+#view.detail{gap:14px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:-.01em}
+.brand svg{width:22px;height:22px}
+.circle-btn{flex:none;width:44px;height:44px;border-radius:22px;border:1px solid var(--line);background:transparent;color:var(--ink);display:grid;place-items:center;padding:0}
+.circle-btn svg{width:18px;height:18px}
+.pill-btn{height:44px;padding:0 16px;border-radius:22px;border:1px solid var(--line);background:transparent;font-size:14px}
+.title-block{display:flex;flex-direction:column;gap:2px}
+.h1{font-size:30px;font-weight:500;letter-spacing:-.03em;line-height:1.15;text-wrap:balance;overflow-wrap:anywhere}
+.summary{display:flex;gap:24px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:14px 0}
+.summary div{display:flex;flex-direction:column;gap:2px}
+.summary b{font-family:var(--mono);font-weight:400;font-size:22px;color:var(--ink)}
+.summary b.st-behind{color:var(--behind)}
+.banner{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px dashed var(--ghost);border-radius:14px;font-size:13px;color:var(--muted)}
+.section-label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:8px}
+
+/* Goal rows */
+.goal-list{display:flex;flex-direction:column;margin-top:-8px}
+.goal-row{display:flex;flex-direction:column;gap:10px;padding:16px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;width:100%;color:inherit}
+.gr-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.gr-name{font-size:17px;font-weight:500;letter-spacing:-.01em;overflow-wrap:anywhere;min-width:0}
+.gr-val{font-family:var(--mono);font-size:14px;white-space:nowrap}
+.gr-val span{color:var(--muted)}
+.gr-bot{display:flex;justify-content:space-between;gap:12px;font-size:13px}
+.gr-bot span:last-child{text-align:right}
+.tick{position:relative;height:12px;display:flex;align-items:center}
+.tick .track{height:3px;width:100%;border-radius:2px;background:var(--track);overflow:hidden}
+.tick .fill{height:100%;background:var(--accent);border-radius:2px}
+.tick .fill.behind{background:var(--behind)}
+.tick .fill.done{background:var(--ink)}
+.tick .mark{position:absolute;top:0;width:2px;height:12px;margin-left:-1px;background:var(--ink);border-radius:1px}
+.segs{display:grid;gap:3px;height:12px;align-items:center}
+.segs i{display:block;height:3px;border-radius:2px;background:var(--track)}
+.segs i.on{background:var(--accent)}
+.segs i.due{background:var(--behind-soft);box-shadow:inset 0 0 0 1px var(--behind)}
+
+/* Empty state */
+.empty{display:flex;flex-direction:column;gap:16px}
+.empty-lead{font-size:15px;color:var(--muted);max-width:40ch}
+.tpl-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.tpl{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;color:inherit;width:100%}
+.tpl b{font-weight:500;display:block}
+.tpl span{font-size:13px;color:var(--muted)}
+.tpl svg{width:16px;height:16px;color:var(--muted);flex:none}
+
+/* Dock */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:20;box-sizing:border-box;padding:16px max(24px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px));background:linear-gradient(to top,var(--bg) 70%,rgba(0,0,0,0))}
+.dock[hidden]{display:none}
+.dock-inner{max-width:512px;margin:0 auto;display:flex;gap:10px}
+.btn{height:56px;border-radius:28px;border:0;background:var(--accent);color:var(--on-accent);font-size:16px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 20px;flex:1;box-sizing:border-box}
+.btn svg{width:18px;height:18px}
+.btn.ghost{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+.btn.ink{background:var(--ink);color:var(--bg)}
+.btn.danger{background:var(--danger);color:var(--on-accent)}
+.btn.sm{height:40px;font-size:14px;flex:none;padding:0 16px;border-radius:20px}
+.btn.round{width:56px;flex:none;padding:0}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.link{border:0;background:none;padding:8px 0;color:var(--muted);font-size:13px;text-decoration:underline;text-underline-offset:3px;align-self:flex-start}
+.link.danger{color:var(--danger)}
+
+/* Goal view */
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.card{border:1px solid var(--line);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--card);min-width:0}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.big-wrap{display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap}
+.big{font-size:48px;font-weight:300;letter-spacing:-.05em;line-height:1}
+.hero-side{text-align:right;flex:none}
+.hero-side .mono{font-size:18px}
+.chart{display:block;width:100%;height:auto}
+.stats3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.stats3 .v{font-family:var(--mono);font-size:14px;overflow-wrap:anywhere}
+.card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.card-title{font-size:16px;font-weight:500}
+.bars-scroll{overflow-x:auto;scrollbar-width:none}
+.bars-scroll::-webkit-scrollbar{display:none}
+.bars{display:flex;gap:4px;align-items:flex-end}
+.bcol{flex:1 0 16px;min-width:16px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.bbox{position:relative;width:100%;height:90px}
+.bplan{position:absolute;left:0;right:0;bottom:0;border:1.5px dashed var(--ghost);border-radius:4px;box-sizing:border-box}
+.bdone{position:absolute;left:0;right:0;bottom:0;background:var(--ink);border-radius:4px}
+.bdone.now{background:var(--accent)} .bdone.miss{background:var(--behind)}
+.blab{font-family:var(--mono);font-size:9px;color:var(--muted)}
+.blab.now{color:var(--accent-text)}
+.mrow{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.mrow:last-child{border-bottom:0}
+.mbar{height:4px;border-radius:2px;background:var(--track);overflow:hidden}
+.mbar i{display:block;height:100%;background:var(--accent)}
+.card.flush{padding-block:4px}
+.sug{border:1px dashed var(--accent);border-radius:20px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;font-size:14px}
+.row-line{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);min-width:0}
+.row-line:last-child{border-bottom:0}
+.row-main{flex:1;min-width:0}
+.row-title{overflow-wrap:anywhere}
+.row-sub{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.x-btn{flex:none;width:36px;height:36px;border-radius:18px;border:0;background:none;color:var(--muted);display:grid;place-items:center;padding:0}
+.x-btn svg{width:15px;height:15px}
+.confirm{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;font-size:13px}
+.check{flex:none;width:30px;height:30px;border-radius:15px;border:1.5px solid var(--ghost);background:none;color:var(--on-accent);display:grid;place-items:center;padding:0}
+.check svg{width:15px;height:15px}
+.check.on{background:var(--accent);border-color:var(--accent)}
+.step-done .row-title{color:var(--muted);text-decoration:line-through}
+.add-step{display:flex;gap:8px}
+
+/* Sheets */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:40;animation:fade .18s}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;display:flex;justify-content:center;pointer-events:none}
+.sheet-panel{pointer-events:auto;width:100%;max-width:560px;max-height:90vh;max-height:90dvh;overflow:auto;box-sizing:border-box;background:var(--card);border-radius:24px 24px 0 0;box-shadow:var(--shadow);padding:10px max(20px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px));animation:rise .22s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;gap:18px}
+.grab{width:36px;height:4px;border-radius:2px;background:var(--line);margin:0 auto;flex:none}
+.sheet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.sh-title{font-size:22px;font-weight:500;letter-spacing:-.02em}
+.sh-sub{font-size:13px;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field>label,.flabel{font-size:13px;color:var(--muted)}
+.input{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:12px 14px;font-size:16px;width:100%;box-sizing:border-box;min-width:0}
+.input:focus{outline:none;border-color:var(--accent)}
+.input.big-in{font-family:var(--mono);font-size:32px;padding:10px 14px}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.inline-unit{display:flex;align-items:center;gap:10px}
+.inline-unit .input{flex:1}
+.inline-unit span{color:var(--muted);flex:none}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:22px;padding:3px;gap:3px}
+.seg button{border:0;background:none;border-radius:18px;padding:9px 6px;font-size:14px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line);background:transparent;font-size:13px;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.preview{border-radius:14px;background:var(--track);padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.preview b{font-weight:500}
+.preview .warn{color:var(--behind)}
+.err{color:var(--danger);font-size:13px}
+.checks{display:flex;flex-direction:column;gap:2px}
+.checkline{display:flex;align-items:center;gap:10px;font-size:14px;padding:6px 0}
+.checkline input{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.step-edit{display:grid;grid-template-columns:minmax(0,1fr) 140px 36px;gap:6px;align-items:center}
+.step-edit .input{padding:10px 12px;font-size:15px}
+.set-group{display:flex;flex-direction:column;gap:12px;padding-top:14px;border-top:1px solid var(--line)}
+.set-group:first-of-type{border-top:0;padding-top:0}
+.set-title{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:22px;font-size:14px;box-shadow:var(--shadow);width:max-content;max-width:calc(100% - 48px);box-sizing:border-box;animation:toastIn .2s}
+@keyframes rise{from{transform:translateY(24px);opacity:0}}
+@keyframes fade{from{opacity:0}}
+@keyframes toastIn{from{transform:translate(-50%,10px);opacity:0}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="app"><main id="view"></main></div>
+<div class="dock" id="dock" hidden></div>
+<div id="sheet-root"></div>
+<div id="toast-root"></div>
+<script>
+(() => {
+"use strict";
+
+const IN_CLAUDE = !!(window.claude && typeof window.claude.use === "function");
+
+/* ---------- Utils ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+const round1 = n => Math.round(n * 10) / 10;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const pad = n => String(n).padStart(2, "0");
+const dayKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayKey = () => dayKey(new Date());
+const parseDay = k => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (k, n) => { const d = parseDay(k); d.setDate(d.getDate() + n); return dayKey(d); };
+const diffDays = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 864e5);
+const mondayOf = k => addDays(k, -((parseDay(k).getDay() + 6) % 7));
+const monthOf = k => k.slice(0, 7);
+const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const wdOf = k => (parseDay(k).getDay() + 6) % 7;
+function addMonths(k, n){ const [y, m, d] = k.split("-").map(Number); const t = new Date(y, m - 1 + n, 1); const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate(); return dayKey(new Date(t.getFullYear(), t.getMonth(), Math.min(d, last))); }
+function monthsBetween(a, b){ let m = 0; while (m < 1200 && addMonths(a, m + 1) <= b) m++; return m; }
+const nextMonth = m => { const [y, mo] = m.split("-").map(Number); return mo === 12 ? `${y + 1}-01` : `${y}-${pad(mo + 1)}`; };
+const fmtD = k => parseDay(k).toLocaleDateString("en-GB", {day:"numeric", month:"short"});
+const fmtDY = k => parseDay(k).toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric"});
+const monthName = m => parseDay(m + "-01").toLocaleDateString("en-GB", {month:"short"});
+const fmt = n => (Math.round(Math.abs(n) * 100) / 100).toLocaleString("en-US", {maximumFractionDigits:2});
+const fmtN = n => (n < 0 ? "−" : "") + fmt(n);
+const fmtS = n => (n > 0 ? "+" : n < 0 ? "−" : "") + fmt(n);
+const plural = (n, w, p) => `${w}${Math.abs(n) === 1 ? "" : (p ?? "s")}`;
+const isNum = v => typeof v === "number" && isFinite(v);
+function niceUp(x){
+  if (!(x > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(x))), step = mag >= 10 ? mag / 10 : mag >= 1 ? 1 : mag;
+  return round2(Math.ceil(x / step - 1e-9) * step);
+}
+function niceMax(x){
+  if (!(x > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(x)));
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * mag >= x - 1e-9) return round2(m * mag);
+  return 10 * mag;
+}
+
+/* ---------- Icons ---------- */
+const IC = {
+  logo:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19L10 5h4L7 19z" fill="var(--ink)"/><path d="M11 19l7-14h3l-7 14z" fill="var(--accent)"/></svg>',
+  sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M22 12h-3"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+};
+
+/* ---------- Templates (suggestions when creating a goal) ---------- */
+const TEMPLATES = [
+  {label:"Run 100 km in 100 days", desc:"Total · about 7 km a week", d:{type:"total", name:"Run 100 km", unit:"km", target:100, endMode:"duration", durN:100, durU:"days"}},
+  {label:"Read 12 books this year", desc:"Total · one a month", d:{type:"total", name:"Read 12 books", unit:"books", target:12, yearEnd:true}},
+  {label:"Gym 3× a week for 12 weeks", desc:"Total · 36 sessions", d:{type:"total", name:"Gym 3× a week", unit:"sessions", target:36, endMode:"duration", durN:12, durU:"weeks"}},
+  {label:"Study 200 hours this semester", desc:"Total · 14 weeks", d:{type:"total", name:"Study 200 h", unit:"h", target:200, endMode:"duration", durN:14, durU:"weeks"}},
+  {label:"Long run 5 → 21 km", desc:"Progression · weekly, +1 km a week, longest run counts", d:{type:"progression", name:"Long run to half marathon", unit:"km", measure:"best", freq:"weekly", days:[0, 2, 4], stepEvery:"time", from:5, to:21, step:1, calc:"end"}},
+  {label:"Push-ups 20 → 100 in one set", desc:"Progression · Mon, Wed, Fri, +5 a week", d:{type:"progression", name:"Push-ups in one set", unit:"reps", measure:"best", freq:"days", days:[0, 2, 4], stepEvery:"week", from:20, to:100, step:5, calc:"end"}},
+  {label:"Plank 30 s → 3 min", desc:"Progression · daily, +10 s a week", d:{type:"progression", name:"Daily plank", unit:"s", measure:"best", freq:"daily", days:[0, 2, 4], stepEvery:"week", from:30, to:180, step:10, calc:"end"}},
+  {label:"Project with milestones", desc:"Milestones · steps with due dates", d:{type:"milestone", name:"New project", steps:["Plan", "Build", "Launch"]}}
+];
+const UNITS = ["km", "h", "min", "sessions", "pages", "books", "reps", "times"];
+const RUN_UNITS = ["km", "mi", "miles"];
+
+/* ---------- State ---------- */
+let S = null;          // {v, goals[], settings{theme}, dismissed{}, updatedAt}
+let L = {};            // logs by month: "YYYY-MM" -> {month, entries[], updatedAt}
+let view = {name:"home"};
+let sheet = null;
+let pendingDel = null;
+let showAllLogs = false;
+const LS_KEY = "headway.v1";
+const blankState = () => ({v:1, goals:[], settings:{theme:"light"}, dismissed:{}, createdAt:Date.now(), updatedAt:0});
+function normalize(s){
+  s = s && typeof s === "object" ? s : blankState();
+  if (!Array.isArray(s.goals)) s.goals = [];
+  s.settings = s.settings || {};
+  if (s.settings.theme !== "dark") s.settings.theme = "light";
+  if (!s.dismissed || typeof s.dismissed !== "object") s.dismissed = {};
+  for (const g of s.goals) if (g.type === "progression" && g.prog) progDefaults(g.prog);
+  return s;
+}
+function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify({S, L})); } catch(e) {} }
+function loadLocal(){ try { const r = JSON.parse(localStorage.getItem(LS_KEY) || "null"); if (r && r.S) return r; } catch(e) {} return null; }
+
+let idx = null;
+const invalidate = () => { idx = null; };
+const allLogs = () => Object.values(L).flatMap(m => m.entries || []);
+function logsFor(gid){
+  if (!idx) { idx = {}; for (const e of allLogs()) for (const id of e.goalIds || []) (idx[id] || (idx[id] = [])).push(e); }
+  return idx[gid] || [];
+}
+const goalById = id => S.goals.find(g => g.id === id);
+
+/* ---------- Progression schedule ---------- */
+// How often: daily, chosen weekdays, weekly, every 2 weeks, monthly (windows counted from the goal's start date).
+// Level step: every time, every week or every month. level = from + steps × step, capped at "to".
+const FREQS = [["daily", "Daily"], ["days", "Chosen days"], ["weekly", "Weekly"], ["biweekly", "Every 2 weeks"], ["monthly", "Monthly"]];
+const OCC = {daily:{one:"day", many:"days", Cap:"Day", now:"today", Now:"Today"}, days:{one:"session", many:"sessions", Cap:"Session", now:"today", Now:"Today"},
+  weekly:{one:"week", many:"weeks", Cap:"Week", now:"this week", Now:"This week"}, biweekly:{one:"2-week block", many:"2-week blocks", Cap:"Block", now:"this block", Now:"This block"},
+  monthly:{one:"month", many:"months", Cap:"Month", now:"this month", Now:"This month"}};
+const STEP_OPTS = {daily:[["time", "Every day"], ["week", "Every week"], ["month", "Every month"]], days:[["time", "Every session"], ["week", "Every week"], ["month", "Every month"]],
+  weekly:[["time", "Every week"], ["month", "Every month"]], biweekly:[["time", "Every 2 weeks"], ["month", "Every month"]], monthly:[["time", "Every month"]]};
+const STEP_DEFAULT = {daily:"week", days:"week", weekly:"time", biweekly:"time", monthly:"time"};
+function progDefaults(p){
+  p.freq = OCC[p.freq] ? p.freq : "weekly";
+  p.days = Array.isArray(p.days) && p.days.length ? p.days.filter(d => d >= 0 && d <= 6) : [0, 2, 4];
+  if (!STEP_OPTS[p.freq].some(([v]) => v === p.stepEvery)) p.stepEvery = STEP_DEFAULT[p.freq];
+  p.measure = p.measure === "total" ? "total" : "best";
+  return p;
+}
+const daysLabel = days => days.slice().sort().map(d => WD[d]).join(", ");
+function freqText(p){ return p.freq === "days" ? daysLabel(p.days) : FREQS.find(f => f[0] === p.freq)[1].toLowerCase(); }
+function stepUnit(p){ return p.stepEvery === "week" ? "week" : p.stepEvery === "month" ? "month" : OCC[p.freq].one; }
+function stepPhrase(p){ return p.stepEvery === "week" ? "a week" : p.stepEvery === "month" ? "a month" : p.freq === "days" ? "a session" : p.freq === "daily" ? "a day" : p.freq === "weekly" ? "a week" : p.freq === "biweekly" ? "every 2 weeks" : "a month"; }
+function stepsPerWeek(p){ return p.stepEvery === "week" ? 1 : p.stepEvery === "month" ? 7 / 30.4 : {daily:7, days:p.days.length, weekly:1, biweekly:0.5, monthly:7 / 30.4}[p.freq]; }
+function occurrences(start, end, p){
+  const out = [];
+  if (!start || !end || end < start) return out;
+  if (p.freq === "daily" || p.freq === "days") {
+    const set = p.freq === "days" ? new Set(p.days) : null;
+    for (let d = start, n = 0; d <= end && n < 3000; d = addDays(d, 1), n++) if (!set || set.has(wdOf(d))) out.push({a:d, b:d});
+  } else if (p.freq === "monthly") {
+    for (let m = 0; m < 600; m++) { const a = addMonths(start, m); if (a > end) break; const b = addDays(addMonths(start, m + 1), -1); out.push({a, b:b > end ? end : b}); }
+  } else {
+    const len = p.freq === "biweekly" ? 14 : 7;
+    for (let a = start, n = 0; a <= end && n < 600; a = addDays(a, len), n++) { const b = addDays(a, len - 1); out.push({a, b:b > end ? end : b}); }
+  }
+  out.forEach((o, i) => { o.i = i; });
+  return out;
+}
+const stepIdx = (start, p, o) => p.stepEvery === "week" ? Math.floor(diffDays(start, o.a) / 7) : p.stepEvery === "month" ? monthsBetween(start, o.a) : o.i;
+// end date of the window in which "steps" level steps have been reached (for "calculate end date")
+function endForSteps(start, p, k){
+  if (p.stepEvery === "week") return addDays(start, (k + 1) * 7 - 1);
+  if (p.stepEvery === "month" || p.freq === "monthly") return addDays(addMonths(start, k + 1), -1);
+  if (p.freq === "daily") return addDays(start, k);
+  if (p.freq === "weekly") return addDays(start, k * 7 + 6);
+  if (p.freq === "biweekly") return addDays(start, k * 14 + 13);
+  const set = new Set(p.days);
+  for (let d = start, c = -1, n = 0; n < 6000; d = addDays(d, 1), n++) if (set.has(wdOf(d)) && ++c === k) return d;
+  return null;
+}
+// move a plan by n level steps (negative = forward); null when the schedule can't be shifted cleanly
+function shiftPlan(g, n){
+  const p = g.prog, u = p.stepEvery === "week" ? "w" : p.stepEvery === "month" ? "m" : {daily:"d", weekly:"w", biweekly:"b", monthly:"m"}[p.freq];
+  if (!u) return false;
+  const mv = k => u === "m" ? addMonths(k, n) : addDays(k, n * (u === "d" ? 1 : u === "w" ? 7 : 14));
+  g.start = mv(g.start); g.end = mv(g.end);
+  return true;
+}
+
+/* ---------- Goal maths ---------- */
+// Total:       pace(t) = target × day_t / days;  ahead = done − pace;  needed/week = (target − done) / days_left × 7
+// Progression: level(k) = from + k × step (capped at "to"); week k is met when its result reaches level(k)
+// Milestones:  expected = steps due by today; behind when a step is overdue
+function calc(g){
+  const t = todayKey();
+  if (g.type === "milestone") {
+    const steps = g.steps || [], n = steps.length, done = steps.filter(s => s.done).length;
+    const expected = steps.filter(s => s.due && s.due <= t).length;
+    const overdue = steps.filter(s => !s.done && s.due && s.due < t);
+    const next = steps.find(s => !s.done);
+    const finished = n > 0 && done === n;
+    let status, st;
+    if (finished) { status = "Complete"; st = "done"; }
+    else if (overdue.length) { status = `${overdue.length} ${plural(overdue.length, "step")} overdue`; st = "behind"; }
+    else if (next) { status = next.due ? `Next: ${next.title} · ${fmtD(next.due)}` : `Next: ${next.title}`; st = "neutral"; }
+    else { status = "Add steps to start"; st = "neutral"; }
+    const lastDue = steps.map(s => s.due).filter(Boolean).sort().pop();
+    return {type:"milestone", n, done, expected, overdue, next, finished, ended:false, st, status,
+      pct:n ? done / n : 0, pacePct:null, valText:String(done), ofText:` / ${n} ${plural(n, "step")}`,
+      kindText:lastDue ? `Milestones · last due ${fmtD(lastDue)}` : "Milestones"};
+  }
+  const started = t >= g.start, ended = t > g.end;
+  const logs = logsFor(g.id).filter(e => e.date >= g.start && e.date <= g.end);
+  if (g.type === "progression") {
+    const P = progDefaults(g.prog), dir = P.to >= P.from ? 1 : -1, O = OCC[P.freq];
+    const occ = occurrences(g.start, g.end, P), n = occ.length;
+    const levelOfStep = k => { const v = round2(P.from + k * P.step); return dir > 0 ? Math.min(P.to, v) : Math.max(P.to, v); };
+    const lv = o => levelOfStep(stepIdx(g.start, P, o));
+    const better = (a, b) => a == null ? b : b == null ? a : dir > 0 ? Math.max(a, b) : Math.min(a, b);
+    const reaches = (v, l) => v != null && (dir > 0 ? v >= l - 1e-9 : v <= l + 1e-9);
+    const res = occ.map(o => {
+      let best = null, tot = 0, any = false;
+      for (const e of logs) if (e.date >= o.a && e.date <= o.b) { any = true; tot += e.value; best = better(best, e.value); }
+      return !any ? null : P.measure === "total" ? round2(tot) : best;
+    });
+    const met = i2 => reaches(res[i2], lv(occ[i2]));
+    let best = null;
+    for (const r of res) best = better(best, r);
+    if (P.freq === "days") {   // entries on days off still count toward your best
+      const off = {};
+      for (const e of logs) if (!P.days.includes(wdOf(e.date))) { const o = off[e.date] || (off[e.date] = {b:null, t:0}); o.t += e.value; o.b = better(o.b, e.value); }
+      for (const o of Object.values(off)) best = better(best, P.measure === "total" ? round2(o.t) : o.b);
+    }
+    const curI = occ.findIndex(o => o.a <= t && t <= o.b), nextI = occ.findIndex(o => o.a > t);
+    const focusI = curI >= 0 ? curI : nextI >= 0 ? nextI : n - 1;
+    const lastPast = (curI >= 0 ? curI : nextI >= 0 ? nextI : n) - 1;
+    let missed = 0;
+    if (started) for (let k = lastPast; k >= 0 && !met(k); k--) missed++;
+    let reachedStep = -1;
+    for (const o of occ) if (reaches(best, lv(o))) reachedStep = Math.max(reachedStep, stepIdx(g.start, P, o));
+    const focus = occ[focusI], focusLevel = focus ? lv(focus) : P.from, focusStep = focus ? stepIdx(g.start, P, focus) : 0;
+    const curRes = curI >= 0 ? res[curI] : null, curMet = curI >= 0 && met(curI);
+    const doneLately = curI >= 0 ? curMet : lastPast >= 0 && met(lastPast);
+    const aheadSteps = doneLately ? Math.max(0, reachedStep - focusStep) : 0;
+    const finished = best != null && reaches(best, P.to);
+    const range = (P.to - P.from) || 1, su = stepUnit(P);
+    let status, st;
+    if (!n) { status = "No scheduled days in this period"; st = "neutral"; }
+    else if (finished) { status = "Goal reached"; st = "done"; }
+    else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
+    else if (ended) { status = `Ended at ${fmt(best ?? P.from)} ${g.unit}`; st = "neutral"; }
+    else if (doneLately && aheadSteps > 0) { status = `${aheadSteps} ${aheadSteps === 1 ? su : su + "s"} ahead`; st = "ahead"; }
+    else if (curMet) { status = P.freq === "days" ? "Today's session done" : `${O.Now}'s level done`; st = "ahead"; }
+    else if (missed > 0) { status = missed === 1 ? `Missed last ${O.one}` : `Missed ${missed} ${O.many}`; st = "behind"; }
+    else if (curI < 0 && focus) { status = `Next: ${WD[wdOf(focus.a)]} · reach ${fmt(focusLevel)} ${g.unit}`; st = "neutral"; }
+    else if (P.measure === "total") { status = `${fmt(Math.abs(focusLevel - (curRes || 0)))} ${g.unit} to go ${O.now}`; st = "neutral"; }
+    else { status = `${O.Now}: reach ${fmt(focusLevel)} ${g.unit}`; st = "neutral"; }
+    return {type:"progression", P, O, occ, n, lv, res, met, best, curI, focusI, focus, focusLevel, curRes, curMet, missed, aheadSteps, reachedStep, finished, started, ended, logs, st, status,
+      pct:best == null ? 0 : clamp((best - P.from) / range, 0, 1), pacePct:started && !finished && !ended && n ? clamp((focusLevel - P.from) / range, 0, 1) : null,
+      valText:curRes == null ? "–" : fmt(curRes), ofText:` / ${fmt(focusLevel)} ${g.unit}`,
+      kindText:!started ? `Progression · starts ${fmtD(g.start)}` : ended ? "Progression · ended" : P.freq === "days" ? `Progression · ${daysLabel(P.days)}` : `Progression · ${O.one} ${focusI + 1} of ${n}`};
+  }
+  // total
+  const days = Math.max(1, diffDays(g.start, g.end) + 1);
+  const dayN = clamp(diffDays(g.start, t) + 1, 0, days);
+  const done = round2(logs.reduce((s, e) => s + e.value, 0));
+  const perDay = g.target / days, pace = perDay * dayN, ahead = done - pace;
+  const remain = dayN === 0 ? days : days - dayN + 1;
+  const needWeek = remain > 0 ? Math.max(0, g.target - done) / remain * 7 : 0;
+  const finished = done >= g.target - 1e-9;
+  let status, st;
+  if (finished) { status = "Goal reached"; st = "done"; }
+  else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
+  else if (ended) { status = `Ended at ${Math.round(done / g.target * 100)}%`; st = "neutral"; }
+  const thr = Math.max(perDay * 0.5, ["sessions", "books", "times", "reps"].includes((g.unit || "").toLowerCase()) ? 0.5 : 0);
+  if (finished || !started || ended) {}
+  else if (ahead >= thr) { status = `${fmt(round1(ahead))} ${g.unit} ahead`; st = "ahead"; }
+  else if (ahead <= -thr) { status = `${fmt(round1(-ahead))} ${g.unit} behind`; st = "behind"; }
+  else { status = "On pace"; st = "ahead"; }
+  const left = diffDays(t, g.end);
+  return {type:"total", days, dayN, done, perDay, pace, ahead, remain, needWeek, finished, started, ended, logs, st, status,
+    pct:clamp(done / g.target, 0, 1), pacePct:started && !ended && !finished ? dayN / days : null,
+    valText:fmt(done), ofText:` / ${fmt(g.target)} ${g.unit}`,
+    kindText:!started ? `Total · starts ${fmtD(g.start)}` : ended ? `Total · ended ${fmtD(g.end)}` : `Total · ${left} ${plural(left, "day")} left`};
+}
+const sumIn = (logs, a, b) => round2(logs.reduce((s, e) => e.date >= a && e.date <= b ? s + e.value : s, 0));
+function totalWeeks(g, k){
+  const out = [], t = todayKey();
+  for (let mon = mondayOf(g.start), i = 0; mon <= g.end && i < 600; mon = addDays(mon, 7), i++) {
+    const a = mon < g.start ? g.start : mon, sun = addDays(mon, 6), b = sun > g.end ? g.end : sun;
+    out.push({a, b, plan:k.perDay * (diffDays(a, b) + 1), done:sumIn(k.logs, a, b), now:t >= a && t <= b, future:a > t});
+  }
+  return out;
+}
+function totalMonths(g, k){
+  const out = [], t = todayKey();
+  for (let m = monthOf(g.start), i = 0; m <= monthOf(g.end) && i < 120; m = nextMonth(m), i++) {
+    const first = m + "-01", last = addDays(nextMonth(m) + "-01", -1);
+    const a = first < g.start ? g.start : first, b = last > g.end ? g.end : last;
+    out.push({m, a, b, plan:k.perDay * (diffDays(a, b) + 1), done:sumIn(k.logs, a, b), future:a > t});
+  }
+  return out;
+}
+
+/* ---------- Suggestions (rules; you always decide) ---------- */
+function suggestion(g, k){
+  const t = todayKey(), wkKey = mondayOf(t), key = s => `${g.id}:${s}:${wkKey}`;
+  if (g.type === "total" && k.started && !k.ended && !k.finished) {
+    const progress = k.dayN / k.days;
+    if (k.ahead >= k.perDay * 7 && progress < 0.9 && !S.dismissed[key("raise")]) {
+      const nt = niceUp(g.target * 1.1);
+      return {text:`You're ${fmt(round1(k.ahead / k.perDay))} days ahead. Raise the goal to ${fmt(nt)} ${g.unit}, or keep the buffer?`,
+        actions:[{label:`Raise to ${fmt(nt)}`, act:"sug-raise", v:nt, primary:true}, {label:"Keep buffer", act:"sug-dismiss", v:"raise"}]};
+    }
+    if (-k.ahead >= k.perDay * 7 && !S.dismissed[key("extend")]) {
+      const extra = Math.ceil(-k.ahead / k.perDay);
+      return {text:`You're ${fmt(round1(-k.ahead))} ${g.unit} behind. To finish on time you need ${fmt(round1(k.needWeek))} ${g.unit} a week (the plan was ${fmt(round1(k.perDay * 7))}). Move the end date by ${extra} days instead?`,
+        actions:[{label:`Extend to ${fmtD(addDays(g.end, extra))}`, act:"sug-extend", v:extra, primary:true}, {label:"Keep the date", act:"sug-dismiss", v:"extend"}]};
+    }
+  }
+  if (g.type === "progression" && k.started && !k.ended && !k.finished) {
+    const su = stepUnit(k.P), shiftable = k.P.stepEvery !== "time" || k.P.freq !== "days";
+    if (shiftable && k.aheadSteps >= 2 && !S.dismissed[key("jump")])
+      return {text:`Your best already reaches the level ${k.aheadSteps} ${su}s ahead. Move the plan forward?`,
+        actions:[{label:`Jump ${k.aheadSteps} ${su}s`, act:"sug-shift", v:-k.aheadSteps, primary:true}, {label:"Keep the plan", act:"sug-dismiss", v:"jump"}]};
+    if (shiftable && k.missed >= 2 && !S.dismissed[key("repeat")])
+      return {text:`You missed the last ${k.missed} ${k.O.many}. Push the plan back by one ${su} so it starts from where you are?`,
+        actions:[{label:`Shift by 1 ${su}`, act:"sug-shift", v:1, primary:true}, {label:"Keep the plan", act:"sug-dismiss", v:"repeat"}]};
+  }
+  if (g.type === "milestone" && k.overdue.length && !S.dismissed[key("due")]) {
+    const s = k.overdue[0];
+    return {text:`"${s.title}" was due ${fmtD(s.due)}. Move it to ${fmtD(addDays(t, 7))}?`,
+      actions:[{label:"Move one week out", act:"sug-due", v:s.id, primary:true}, {label:"Leave it", act:"sug-dismiss", v:"due"}]};
+  }
+  return null;
+}
+
+/* ---------- Charts ---------- */
+const CH = {W:342, H:184, x0:32, x1:336, yT:12, yB:156};
+function axisLabels(yMax){
+  const y = v => CH.yB - v / yMax * (CH.yB - CH.yT);
+  return [0, yMax / 2, yMax].map(v => `<line x1="${CH.x0}" y1="${y(v).toFixed(1)}" x2="${CH.x1}" y2="${y(v).toFixed(1)}" stroke="var(--line)"/>
+    <text x="${CH.x0 - 6}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)" font-family="var(--mono)">${fmt(round1(v))}</text>`).join("");
+}
+function monthTicks(start, end, xOf){
+  let out = "", lastX = -99, m = monthOf(start), i = 0;
+  for (; m <= monthOf(end) && i < 40; m = nextMonth(m), i++) {
+    const d = m === monthOf(start) ? start : m + "-01", x = xOf(diffDays(start, d));
+    if (x - lastX < 34 || x > CH.x1 - 14) continue;
+    out += `<text x="${x.toFixed(1)}" y="${CH.H - 4}" font-size="10" fill="var(--muted)" font-family="var(--mono)">${monthName(m)}</text>`;
+    lastX = x;
+  }
+  return out;
+}
+function chartTotal(g, k){
+  const yMax = niceMax(Math.max(g.target, k.done));
+  const x = d => CH.x0 + d / k.days * (CH.x1 - CH.x0), y = v => CH.yB - v / yMax * (CH.yB - CH.yT);
+  const per = {}; for (const e of k.logs) per[e.date] = (per[e.date] || 0) + e.value;
+  const pts = [[x(0), y(0)]]; let cum = 0;
+  for (let d = 1; d <= k.dayN; d++) { cum += per[addDays(g.start, d - 1)] || 0; pts.push([x(d), y(cum)]); }
+  const P = p => p.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
+  const [tx, ty] = pts[pts.length - 1];
+  const shade = k.dayN > 0 ? `<polygon points="${P(pts)} ${tx.toFixed(1)},${y(k.pace).toFixed(1)}" fill="${k.ahead >= 0 ? "var(--accent-soft)" : "var(--behind-soft)"}"/>` : "";
+  const today = k.started && !k.ended ? `<line x1="${tx.toFixed(1)}" y1="${CH.yT}" x2="${tx.toFixed(1)}" y2="${CH.yB}" stroke="var(--line)"/>
+    <text x="${Math.min(tx + 6, CH.x1 - 30).toFixed(1)}" y="${Math.max(ty - 8, CH.yT + 10).toFixed(1)}" font-size="11" font-weight="600" fill="var(--ink)" font-family="var(--font)">Today</text>` : "";
+  return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(`${fmt(k.done)} of ${fmt(g.target)} ${g.unit} so far, pace line at ${fmt(round1(k.pace))}`)}">
+    ${axisLabels(yMax)}${monthTicks(g.start, g.end, x)}${shade}
+    <line x1="${x(0)}" y1="${y(0)}" x2="${x(k.days).toFixed(1)}" y2="${y(g.target).toFixed(1)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+    ${today}
+    <polyline points="${P(pts)}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
+  </svg>`;
+}
+function chartProg(g, k){
+  const P = k.P, vals = [P.from, P.to, ...k.res.filter(v => v != null)], days = Math.max(1, diffDays(g.start, g.end) + 1);
+  const yMax = niceMax(Math.max(...vals));
+  const x = d => CH.x0 + d / days * (CH.x1 - CH.x0), y = v => CH.yB - v / yMax * (CH.yB - CH.yT);
+  let stair = "";
+  k.occ.forEach((o, i) => {
+    const xa = x(diffDays(g.start, o.a)), l = y(k.lv(o));
+    stair += i === 0 ? `M${xa.toFixed(1)},${l.toFixed(1)}` : ` H${xa.toFixed(1)} V${l.toFixed(1)}`;
+  });
+  if (k.occ.length) stair += ` H${x(days).toFixed(1)}`;
+  const r = k.n > 80 ? 2.2 : k.n > 30 ? 3 : 4.5;
+  let dots = "";
+  k.res.forEach((v, i) => {
+    if (v == null) return;
+    const o = k.occ[i], ok = k.met(i), now = i === k.curI;
+    const cx = x(diffDays(g.start, o.a) + (diffDays(o.a, o.b) + 1) / 2);
+    dots += `<circle cx="${cx.toFixed(1)}" cy="${y(v).toFixed(1)}" r="${r}" fill="${ok ? "var(--accent)" : now ? "var(--card)" : "var(--behind)"}" stroke="${ok || now ? "var(--accent)" : "var(--behind)"}" stroke-width="${r > 3 ? 2 : 1.5}"/>`;
+  });
+  const tx = x(clamp(diffDays(g.start, todayKey()) + 0.5, 0, days));
+  const today = k.started && !k.ended ? `<line x1="${tx.toFixed(1)}" y1="${CH.yT}" x2="${tx.toFixed(1)}" y2="${CH.yB}" stroke="var(--line)"/>` : "";
+  return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(`Planned levels from ${fmt(P.from)} to ${fmt(P.to)} ${g.unit}, with your results as dots`)}">
+    ${axisLabels(yMax)}${monthTicks(g.start, g.end, x)}${today}
+    <path d="${stair}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+    ${dots}
+  </svg>`;
+}
+function planBars(items){
+  const max = Math.max(1e-9, ...items.map(i => Math.max(i.plan, i.done || 0)));
+  const px = v => `${Math.max(0, v / max * 86).toFixed(1)}px`;
+  return `<div class="bars-scroll" data-scroll-now><div class="bars">${items.map(i => `<div class="bcol" ${i.now ? "data-now" : ""} title="${esc(i.title)}">
+    <div class="bbox"><div class="bplan" style="height:${px(i.plan)}"></div>${i.done ? `<div class="bdone ${i.now ? "now" : i.miss ? "miss" : ""}" style="height:${px(i.done)}"></div>` : ""}</div>
+    <span class="blab ${i.now ? "now" : ""}">${i.label}</span></div>`).join("")}</div></div>`;
+}
+
+/* ---------- Views ---------- */
+function applyTheme(){ document.documentElement.setAttribute("data-app-theme", S.settings.theme === "dark" ? "dark" : "light"); }
+function render(){
+  if (!S) return;
+  applyTheme();
+  const v = $("#view");
+  if (view.name === "goal" && !goalById(view.id)) view = {name:"home"};
+  v.className = view.name === "goal" ? "detail" : "";
+  v.innerHTML = view.name === "goal" ? viewGoal(goalById(view.id)) : viewHome();
+  renderDock();
+  const sc = v.querySelector("[data-scroll-now]"), now = sc && sc.querySelector("[data-now]");
+  if (sc && now) sc.scrollLeft = Math.max(0, now.offsetLeft - sc.clientWidth / 2);
+}
+function bar(g, k){
+  if (g.type === "milestone") {
+    const t = todayKey(), steps = g.steps || [];
+    if (!steps.length) return `<div class="tick"><div class="track"></div></div>`;
+    return `<div class="segs" style="grid-template-columns:repeat(${steps.length},minmax(0,1fr))">${steps.map(s => `<i class="${s.done ? "on" : s.due && s.due < t ? "due" : ""}"></i>`).join("")}</div>`;
+  }
+  const cls = k.finished ? "done" : k.st === "behind" ? "behind" : "";
+  return `<div class="tick"><div class="track"><div class="fill ${cls}" style="width:${(k.pct * 100).toFixed(1)}%"></div></div>${k.pacePct != null ? `<div class="mark" style="left:${(k.pacePct * 100).toFixed(1)}%"></div>` : ""}</div>`;
+}
+function goalRow(g){
+  const k = calc(g);
+  return `<button class="goal-row" data-act="open-goal" data-id="${g.id}">
+    <span class="gr-top"><span class="gr-name">${esc(g.name)}</span><span class="gr-val">${esc(k.valText)}<span>${esc(k.ofText)}</span></span></span>
+    ${bar(g, k)}
+    <span class="gr-bot"><span class="muted">${esc(k.kindText)}</span><span class="st-${k.st}">${esc(k.status)}</span></span>
+  </button>`;
+}
+function topbar(){
+  return `<div class="topbar"><div class="brand">${IC.logo}Headway</div><button class="circle-btn" data-act="open-settings" aria-label="Settings">${IC.sliders}</button></div>`;
+}
+function viewHome(){
+  const date = new Date().toLocaleDateString("en-GB", {weekday:"long", day:"numeric", month:"long"});
+  const active = S.goals.filter(g => !g.archived);
+  let html = topbar() + `<div class="title-block"><div class="small muted">${date}</div><h1 class="h1">Goals</h1></div>`;
+  if (!active.length) return html + emptyState();
+  const rows = active.map(g => ({g, k:calc(g)}));
+  const current = rows.filter(r => !r.k.finished && !r.k.ended), past = rows.filter(r => r.k.finished || r.k.ended);
+  const onPace = current.filter(r => r.k.st === "ahead").length, behind = current.filter(r => r.k.st === "behind").length;
+  html += `<div class="summary"><div><b>${onPace}</b>on pace</div><div><b class="${behind ? "st-behind" : ""}">${behind}</b>behind</div><div><b>${rows.filter(r => r.k.finished).length}</b>reached</div></div>`;
+  if (S.goals.some(g => g.example)) html += `<div class="banner"><span>You're looking at example goals.</span><button class="link" data-act="clear-examples" style="padding:0">Clear examples</button></div>`;
+  if (current.length) html += `<div class="goal-list">${current.map(r => goalRow(r.g)).join("")}</div>`;
+  if (past.length) html += `<div class="section-label">Reached or ended</div><div class="goal-list">${past.map(r => goalRow(r.g)).join("")}</div>`;
+  return html;
+}
+function emptyState(){
+  return `<div class="empty">
+    <p class="empty-lead">Set a bigger goal, see your pace, and work ahead. Start from a suggestion or make your own.</p>
+    <div class="tpl-list">${TEMPLATES.map((t, i) => `<button class="tpl" data-act="tpl" data-i="${i}"><span><b>${esc(t.label)}</b><span>${esc(t.desc)}</span></span>${IC.chev}</button>`).join("")}</div>
+    <button class="link" data-act="load-examples">Or explore with example goals</button>
+  </div>`;
+}
+function viewGoal(g){
+  const k = calc(g);
+  let html = `<div class="topbar"><button class="circle-btn" data-act="home" aria-label="Back to goals">${IC.back}</button><button class="pill-btn" data-act="edit-goal" data-id="${g.id}">Edit goal</button></div>`;
+  const metaRange = g.type === "milestone" ? k.kindText : `${g.type === "total" ? "Total" : "Progression"} · ${fmtD(g.start)} → ${fmtDY(g.end)}`;
+  html += `<div class="title-block" style="padding:2px 0 4px"><div class="meta">${esc(metaRange)}</div><h1 class="h1">${esc(g.name)}</h1></div>`;
+  if (g.type === "total") html += heroTotal(g, k) + weeksTotal(g, k) + monthsTotal(g, k);
+  else if (g.type === "progression") html += heroProg(g, k) + weeksProg(g, k);
+  else html += heroMilestone(g, k) + stepsCard(g, k);
+  const sug = suggestion(g, k);
+  if (sug) html += `<div class="sug"><div>${esc(sug.text)}</div><div class="btn-row">${sug.actions.map(a => `<button class="btn sm ${a.primary ? "" : "ghost"}" data-act="${a.act}" data-id="${g.id}" data-v="${esc(a.v)}">${esc(a.label)}</button>`).join("")}</div></div>`;
+  if (g.type !== "milestone") html += logsCard(g);
+  return html;
+}
+function heroTotal(g, k){
+  const side = !k.started ? `<div class="mono">${fmt(round1(k.perDay * 7))}/wk</div><div class="xs muted">planned</div>`
+    : k.finished ? `<div class="mono st-ahead">Done</div><div class="xs muted">goal reached</div>`
+    : `<div class="mono ${k.ahead >= 0 ? "st-ahead" : "st-behind"}">${fmtS(round1(k.ahead))} ${esc(g.unit)}</div><div class="xs muted">${k.ahead >= 0 ? "ahead of pace" : "behind pace"}</div>`;
+  const buf = k.ahead / (k.perDay || 1);
+  return `<div class="card">
+    <div class="hero-top"><div class="big-wrap"><span class="big">${fmt(k.done)}</span><span class="mono small muted">/ ${fmt(g.target)} ${esc(g.unit)}</span></div><div class="hero-side">${side}</div></div>
+    ${chartTotal(g, k)}
+    <div class="stats3">
+      <div><div class="xs muted">Plan</div><div class="v">${fmt(round1(k.perDay * 7))} ${esc(g.unit)}/wk</div></div>
+      <div><div class="xs muted">Needed now</div><div class="v">${k.finished ? "–" : `${fmt(round1(k.needWeek))} ${esc(g.unit)}/wk`}</div></div>
+      <div><div class="xs muted">${buf >= 0 ? "Buffer" : "Behind by"}</div><div class="v">${k.started && !k.finished ? `≈ ${fmt(round1(Math.abs(buf)))} ${plural(round1(Math.abs(buf)), "day")}` : "–"}</div></div>
+    </div></div>`;
+}
+function weeksTotal(g, k){
+  const ws = totalWeeks(g, k), now = ws.find(w => w.now);
+  const items = ws.map((w, i) => ({plan:w.plan, done:w.done, now:w.now, label:w.now ? "now" : String(i + 1),
+    title:`${fmtD(w.a)} – ${fmtD(w.b)}: ${fmt(w.done)} of ${fmt(round1(w.plan))} ${g.unit}`}));
+  const nowLine = now ? `This week: <b>${fmt(now.done)} of ${fmt(round1(now.plan))} ${esc(g.unit)}</b>, ${diffDays(todayKey(), now.b) + 1} ${plural(diffDays(todayKey(), now.b) + 1, "day")} left.` : `${ws.length} weeks, ${fmt(round1(k.perDay * 7))} ${esc(g.unit)} a week.`;
+  return `<div class="card"><div class="card-head"><span class="card-title">Weeks</span><span class="xs muted">dashed = plan · filled = done</span></div>
+    ${planBars(items)}<div class="small muted">${nowLine}</div></div>`;
+}
+function monthsTotal(g, k){
+  const ms = totalMonths(g, k);
+  if (ms.length < 2) return "";
+  return `<div class="card flush">${ms.map(m => `<div class="mrow"><span>${monthName(m.m)}</span><div class="mbar"><i style="width:${clamp(m.done / (m.plan || 1) * 100, 0, 100).toFixed(0)}%"></i></div>
+    <span class="mono small ${m.future ? "muted" : ""}">${m.future && !m.done ? "–" : fmt(m.done)} / ${fmt(round1(m.plan))}</span></div>`).join("")}</div>`;
+}
+function heroProg(g, k){
+  const P = k.P, O = k.O;
+  const side = k.finished ? `<div class="mono st-ahead">Reached</div><div class="xs muted">best ${fmt(k.best)} ${esc(g.unit)}</div>`
+    : `<div class="mono">${k.started && k.n ? `${O.Cap} ${k.focusI + 1}` : "Not started"}</div><div class="xs muted">of ${k.n}</div>`;
+  const what = k.curI >= 0 ? `${P.measure === "total" ? "total" : "best"} ${O.now}` : k.focus ? `next: ${WD[wdOf(k.focus.a)]} ${fmtD(k.focus.a)}` : "";
+  return `<div class="card">
+    <div class="hero-top"><div class="big-wrap"><span class="big">${esc(k.valText)}</span><span class="mono small muted">/ ${fmt(k.focusLevel)} ${esc(g.unit)} ${esc(what)}</span></div><div class="hero-side">${side}</div></div>
+    ${chartProg(g, k)}
+    <div class="stats3">
+      <div><div class="xs muted">From → to</div><div class="v">${fmt(P.from)} → ${fmt(P.to)}</div></div>
+      <div><div class="xs muted">Step</div><div class="v">${fmtS(P.step)} ${esc(stepPhrase(P))}</div></div>
+      <div><div class="xs muted">Best so far</div><div class="v">${k.best == null ? "–" : `${fmt(k.best)} ${esc(g.unit)}`}</div></div>
+    </div>
+    <div class="xs muted">${esc(`${P.measure === "total" ? "Total" : "Best single entry"} counts · ${freqText(P)}`)}</div></div>`;
+}
+function weeksProg(g, k){
+  const P = k.P, O = k.O, dayish = P.freq === "daily" || P.freq === "days";
+  const items = k.occ.map((o, i) => {
+    const now = i === k.curI;
+    const label = now ? "now" : dayish ? String(parseDay(o.a).getDate()) : P.freq === "monthly" ? monthName(monthOf(o.a)) : String(i + 1);
+    return {plan:k.lv(o), done:k.res[i] || 0, now, miss:k.res[i] != null && !k.met(i), label,
+      title:`${O.Cap} ${i + 1} (${o.a === o.b ? `${WD[wdOf(o.a)]} ${fmtD(o.a)}` : `${fmtD(o.a)} – ${fmtD(o.b)}`}): level ${fmt(k.lv(o))}${k.res[i] != null ? `, you did ${fmt(k.res[i])}` : ""}`};
+  });
+  const line = !k.started || k.ended ? `${k.n} ${O.many}, ${freqText(P)}, from ${fmtD(g.start)} to ${fmtD(g.end)}.`
+    : k.curI >= 0 ? `${O.Now}'s level: <b>${fmt(k.focusLevel)} ${esc(g.unit)}</b>${k.curRes != null ? `, you're at ${fmt(k.curRes)}` : ""}.`
+    : k.focus ? `Next ${O.one}: <b>${WD[wdOf(k.focus.a)]} ${fmtD(k.focus.a)}</b>, level ${fmt(k.focusLevel)} ${esc(g.unit)}.` : "";
+  const title = {daily:"Days", days:"Sessions", weekly:"Weeks", biweekly:"2-week blocks", monthly:"Months"}[P.freq];
+  return `<div class="card"><div class="card-head"><span class="card-title">${title}</span><span class="xs muted">dashed = level · filled = you</span></div>
+    ${planBars(items)}<div class="small muted">${line}</div></div>`;
+}
+function heroMilestone(g, k){
+  return `<div class="card">
+    <div class="hero-top"><div class="big-wrap"><span class="big">${k.done}</span><span class="mono small muted">/ ${k.n} ${plural(k.n, "step")}</span></div>
+      <div class="hero-side"><div class="mono ${k.st === "behind" ? "st-behind" : k.finished ? "st-ahead" : ""}">${k.finished ? "Complete" : `${Math.round(k.pct * 100)}%`}</div><div class="xs muted">${k.overdue.length ? `${k.overdue.length} overdue` : "done"}</div></div></div>
+    ${bar(g, k)}
+    ${k.next ? `<div class="small muted">Next: <b style="color:var(--ink);font-weight:500">${esc(k.next.title)}</b>${k.next.due ? ` · due ${fmtD(k.next.due)}` : ""}</div>` : ""}
+  </div>`;
+}
+function stepsCard(g){
+  const t = todayKey();
+  const rows = (g.steps || []).map(s => `<div class="row-line ${s.done ? "step-done" : ""}">
+    <button class="check ${s.done ? "on" : ""}" data-act="toggle-step" data-id="${g.id}" data-step="${s.id}" aria-label="${s.done ? "Mark as not done" : "Mark as done"}: ${esc(s.title)}" aria-pressed="${!!s.done}">${s.done ? IC.check : ""}</button>
+    <div class="row-main"><div class="row-title">${esc(s.title)}</div><div class="row-sub ${!s.done && s.due && s.due < t ? "st-behind" : ""}">${s.done ? `Done ${s.doneAt ? fmtD(s.doneAt) : ""}` : s.due ? `Due ${fmtDY(s.due)}` : "No due date"}</div></div></div>`).join("");
+  return `<div class="card"><div class="card-head"><span class="card-title">Steps</span><span class="xs muted">tap the circle when done</span></div>
+    <div>${rows || `<div class="small muted">No steps yet.</div>`}</div>
+    <div class="add-step"><input class="input" id="new-step" maxlength="80" placeholder="Add a step" aria-label="New step"><button class="btn sm" data-act="add-step" data-id="${g.id}">Add</button></div></div>`;
+}
+function logsCard(g){
+  const logs = logsFor(g.id).slice().sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
+  if (!logs.length) return `<div class="card"><span class="card-title">Log</span><div class="small muted">Nothing logged yet. Use the button below to add your first entry.</div></div>`;
+  const list = showAllLogs ? logs : logs.slice(0, 6);
+  const rows = list.map(e => {
+    const others = (e.goalIds || []).filter(id => id !== g.id).map(goalById).filter(Boolean);
+    const confirming = pendingDel === e.id;
+    return `<div class="row-line"><div class="row-main"><div class="row-title"><span class="mono">${fmt(e.value)} ${esc(g.unit)}</span> <span class="muted small">· ${fmtD(e.date)}</span></div>
+      ${e.note || others.length ? `<div class="row-sub">${esc(e.note || "")}${e.note && others.length ? " · " : ""}${others.length ? `also counts for ${esc(others.map(o => o.name).join(", "))}` : ""}</div>` : ""}</div>
+      ${confirming ? `<div class="confirm">${others.length ? "Delete everywhere?" : "Delete?"}<button class="btn sm danger" data-act="del-log" data-id="${e.id}">Delete</button><button class="btn sm ghost" data-act="cancel-del">Keep</button></div>`
+        : `<button class="x-btn" data-act="ask-del-log" data-id="${e.id}" aria-label="Delete entry from ${fmtD(e.date)}">${IC.x}</button>`}</div>`;
+  }).join("");
+  return `<div class="card flush" style="padding-top:14px"><span class="card-title">Log</span><div>${rows}</div>
+    ${logs.length > 6 ? `<button class="link" data-act="toggle-logs" style="margin-bottom:8px">${showAllLogs ? "Show fewer" : `Show all ${logs.length}`}</button>` : ""}</div>`;
+}
+function renderDock(){
+  const d = $("#dock");
+  let inner = "";
+  if (view.name === "home") {
+    const any = loggable().length > 0;
+    inner = any ? `<button class="btn" data-act="open-log">${IC.plus}Log progress</button><button class="btn ghost round" data-act="new-goal" aria-label="New goal">${IC.target}</button>`
+      : `<button class="btn" data-act="new-goal">${IC.plus}New goal</button>`;
+  } else {
+    const g = goalById(view.id);
+    if (g && g.type !== "milestone") inner = `<button class="btn" data-act="open-log" data-id="${g.id}">${IC.plus}Log ${esc(g.unit)}</button>`;
+  }
+  d.hidden = !inner;
+  d.innerHTML = inner ? `<div class="dock-inner">${inner}</div>` : "";
+}
+const loggable = () => S.goals.filter(g => !g.archived && g.type !== "milestone" && g.start <= todayKey());
+
+/* ---------- Sheets ---------- */
+function openSheet(s){ sheet = s; renderSheet(); }
+function closeSheet(){ sheet = null; $("#sheet-root").innerHTML = ""; }
+function renderSheet(){
+  const root = $("#sheet-root");
+  if (!sheet) { root.innerHTML = ""; return; }
+  const body = sheet.type === "log" ? sheetLog() : sheet.type === "goal" ? sheetGoal() : sheetSettings();
+  root.innerHTML = `<div class="scrim" data-act="close-sheet"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(sheet.type === "log" ? "Log progress" : sheet.type === "goal" ? "Goal" : "Settings")}"><div class="sheet-panel">${body}</div></div>`;
+  if (sheet.type === "goal") updateGoalPreview();
+  if (sheet.type === "log") updateLogPreview();
+}
+const closeX = `<button class="circle-btn" data-act="close-sheet" aria-label="Close">${IC.x}</button>`;
+
+// Log sheet
+const QUICK = {km:[3, 5, 10], mi:[2, 3, 6], h:[0.5, 1, 2], min:[15, 30, 60], sessions:[1], books:[1], times:[1], pages:[10, 25, 50], reps:[10, 20, 30]};
+function sheetLog(){
+  const goals = loggable();
+  if (!goals.length) return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">Log progress</div>${closeX}</div><p class="muted">You don't have a goal to log toward yet. Milestone goals are ticked off in the goal itself.</p>`;
+  if (!goalById(sheet.gid) || !goals.includes(goalById(sheet.gid))) sheet.gid = goals[0].id;
+  const g = goalById(sheet.gid), t = todayKey();
+  sheet.date = sheet.date || t;
+  const max = g.end < t ? g.end : t;
+  if (sheet.date > max) sheet.date = max;
+  if (sheet.date < g.start) sheet.date = g.start;
+  const unitKey = g.unit.toLowerCase().trim();
+  const others = goals.filter(o => o.id !== g.id && o.unit.toLowerCase().trim() === unitKey);
+  if (!sheet.also) sheet.also = {};
+  const quick = QUICK[unitKey] || [];
+  const yest = addDays(t, -1);
+  return `<div class="grab"></div><div class="sheet-head"><div><div class="sh-title">Log progress</div><div class="sh-sub">Any day since the goal started</div></div>${closeX}</div>
+    ${goals.length > 1 ? `<div class="field"><span class="flabel">Goal</span><div class="chips" role="group" aria-label="Goal">${goals.map(o => `<button class="chip" data-act="log-goal" data-id="${o.id}" aria-pressed="${o.id === g.id}">${esc(o.name)}</button>`).join("")}</div></div>` : `<div><b style="font-weight:500">${esc(g.name)}</b></div>`}
+    <div class="field"><label for="lg-val">${g.type === "progression" && g.prog.measure !== "total" ? `Result (your best counts for the ${OCC[progDefaults(g.prog).freq].one})` : "Amount"}</label>
+      <div class="inline-unit"><input class="input big-in" id="lg-val" type="number" inputmode="decimal" min="0" step="any" value="${esc(sheet.val ?? "")}" placeholder="0"><span>${esc(g.unit)}</span></div>
+      ${quick.length ? `<div class="chips">${quick.map(q => `<button class="chip" data-act="log-quick" data-v="${q}">${fmt(q)} ${esc(g.unit)}</button>`).join("")}</div>` : ""}</div>
+    <div class="field"><span class="flabel">Day</span><div class="chips" role="group" aria-label="Day">
+      <button class="chip" data-act="log-day" data-v="${t}" aria-pressed="${sheet.date === t}" ${t > max ? "disabled" : ""}>Today</button>
+      ${yest >= g.start ? `<button class="chip" data-act="log-day" data-v="${yest}" aria-pressed="${sheet.date === yest}">Yesterday</button>` : ""}
+      <input class="input" id="lg-date" type="date" min="${g.start}" max="${max}" value="${sheet.date}" aria-label="Pick a date" style="width:auto;padding:6px 12px;font-size:14px;border-radius:18px"></div></div>
+    <div class="field"><label for="lg-note">Note <span class="muted">(optional)</span></label><input class="input" id="lg-note" maxlength="80" value="${esc(sheet.note ?? "")}" placeholder="e.g. easy run by the river"></div>
+    ${others.length ? `<div class="field"><span class="flabel">Also count toward</span><div class="checks">${others.map(o => `<label class="checkline"><input type="checkbox" data-also="${o.id}" ${sheet.also[o.id] !== false ? "checked" : ""}>${esc(o.name)}</label>`).join("")}</div></div>` : ""}
+    <div class="preview" id="lg-pv"></div>
+    <div class="err" id="lg-err" hidden></div>
+    <button class="btn" data-act="save-log">Log it</button>`;
+}
+function updateLogPreview(){
+  const pv = $("#lg-pv"); if (!pv || !sheet) return;
+  const g = goalById(sheet.gid), v = parseFloat(sheet.val);
+  if (!g || !(v > 0)) { pv.innerHTML = `<span class="muted">Enter an amount to see where it puts you.</span>`; return; }
+  const k = calc(g);
+  if (g.type === "total") {
+    const nd = k.done + v, na = k.ahead + v;
+    pv.innerHTML = `<b>${fmt(round2(nd))} / ${fmt(g.target)} ${esc(g.unit)}</b><span class="${na >= 0 ? "st-ahead" : "st-behind"}">${k.started ? `${fmtS(round1(na))} ${esc(g.unit)} ${na >= 0 ? "ahead of pace" : "behind pace"}` : ""}</span>`;
+  } else {
+    const i2 = k.occ.findIndex(o => o.a <= sheet.date && sheet.date <= o.b);
+    if (i2 < 0) { pv.innerHTML = `<b>Not a scheduled day</b><span class="muted">It's still saved and counts toward your best so far.</span>`; return; }
+    const o = k.occ[i2], lv = k.lv(o), up = k.P.to >= k.P.from, prev = k.res[i2];
+    const nv = k.P.measure === "total" ? round2((prev || 0) + v) : prev == null ? v : up ? Math.max(prev, v) : Math.min(prev, v);
+    const ok = up ? nv >= lv - 1e-9 : nv <= lv + 1e-9;
+    pv.innerHTML = `<b>${k.O.Cap} ${i2 + 1}: ${fmt(nv)} / ${fmt(lv)} ${esc(g.unit)}</b><span class="${ok ? "st-ahead" : "muted"}">${ok ? "Level reached" : "Not at the level yet"}</span>`;
+  }
+}
+async function saveLog(){
+  const err = $("#lg-err"), fail = m => { err.textContent = m; err.hidden = false; };
+  const g = goalById(sheet.gid), v = round2(parseFloat(sheet.val)), t = todayKey(), date = sheet.date;
+  if (!g) return fail("Pick a goal first.");
+  if (!(v > 0)) return fail("Enter an amount above 0.");
+  if (!date || date > t) return fail("You can't log a day in the future.");
+  if (date < g.start) return fail(`This goal starts on ${fmtD(g.start)}.`);
+  if (date > g.end) return fail(`This goal ended on ${fmtD(g.end)}.`);
+  const ids = [g.id];
+  document.querySelectorAll("[data-also]").forEach(cb => { const o = goalById(cb.dataset.also); if (cb.checked && o && date >= o.start && date <= o.end) ids.push(o.id); });
+  const e = {id:newId(), date, value:v, goalIds:ids, ts:Date.now()};
+  if (sheet.note && sheet.note.trim()) e.note = sheet.note.trim();
+  const mk = monthOf(date);
+  (L[mk] || (L[mk] = {month:mk, entries:[], updatedAt:0})).entries.push(e);
+  L[mk].updatedAt = Date.now();
+  invalidate(); persist([mk]);
+  closeSheet(); render();
+  toast(`Logged ${fmt(v)} ${g.unit}${ids.length > 1 ? ` for ${ids.length} goals` : ""}`);
+}
+
+// Goal sheet (create / edit)
+function draftFromGoal(g){
+  const d = {type:g.type, name:g.name, unit:g.unit || "", start:g.start || todayKey(), steps:[]};
+  if (g.type === "total") Object.assign(d, {target:g.target, endMode:"date", end:g.end, durN:"", durU:"days"});
+  if (g.type === "progression") { const p = progDefaults(Object.assign({}, g.prog)); Object.assign(d, {measure:p.measure, freq:p.freq, days:p.days.slice(), stepEvery:p.stepEvery, from:p.from, to:p.to, step:p.step, calc:"end", pEnd:g.end}); }
+  if (g.type === "milestone") d.steps = (g.steps || []).map(s => Object.assign({}, s));
+  return d;
+}
+function draftFromTemplate(t){
+  const today = todayKey(), d = Object.assign({start:today, unit:"", steps:[]}, JSON.parse(JSON.stringify(t.d)));
+  if (d.yearEnd) { d.endMode = "date"; d.end = `${today.slice(0, 4)}-12-31`; delete d.yearEnd; }
+  if (d.type === "total" && !d.endMode) d.endMode = "date";
+  if (d.type === "milestone") d.steps = (d.steps || []).map((title, i) => ({id:newId(), title, due:addDays(today, 14 * (i + 1)), done:false}));
+  return d;
+}
+function blankDraft(type){
+  const t = todayKey();
+  if (type === "progression") return {type, name:"", unit:"km", start:t, measure:"best", freq:"weekly", days:[0, 2, 4], stepEvery:"time", from:"", to:"", step:"", calc:"end", pEnd:addDays(t, 83), steps:[]};
+  if (type === "milestone") return {type, name:"", unit:"", start:t, steps:[{id:newId(), title:"", due:"", done:false}]};
+  return {type:"total", name:"", unit:"km", start:t, target:"", endMode:"duration", durN:12, durU:"weeks", end:addDays(t, 83), steps:[]};
+}
+const num = v => (v === "" || v == null) ? NaN : Number(v);
+// any two of end value / step / end date give the third
+function progDerived(d){
+  const from = num(d.from), to = num(d.to), step = num(d.step), out = {ok:false};
+  if (!isNum(from) || !d.start) return out;
+  const p = progDefaults({freq:d.freq, days:d.days, stepEvery:d.stepEvery, measure:d.measure});
+  if (d.freq === "days" && !(d.days || []).length) return {ok:false, why:"Pick at least one day."};
+  if (d.calc === "end") {
+    if (!isNum(to) || !isNum(step) || step === 0 || (to !== from && Math.sign(to - from) !== Math.sign(step))) return out;
+    const k = Math.ceil(Math.abs(to - from) / Math.abs(step) - 1e-9), end = endForSteps(d.start, p, k);
+    if (!end) return out;
+    return {ok:true, p, from, to, step, steps:k, end, count:occurrences(d.start, end, p).length};
+  }
+  if (!d.pEnd || d.pEnd < d.start) return out;
+  const occ = occurrences(d.start, d.pEnd, p);
+  if (!occ.length) return out;
+  const steps = stepIdx(d.start, p, occ[occ.length - 1]), end = d.pEnd;
+  if (d.calc === "step") { if (!isNum(to)) return out; return {ok:true, p, from, to, step:round2((to - from) / Math.max(1, steps)), steps, end, count:occ.length}; }
+  if (!isNum(step)) return out;
+  return {ok:true, p, from, step, to:round2(from + step * steps), steps, end, count:occ.length};
+}
+function totalEnd(d){
+  if (d.endMode === "duration") { const n = Math.round(num(d.durN)); return n > 0 ? addDays(d.start, n * (d.durU === "weeks" ? 7 : 1) - 1) : null; }
+  return d.end || null;
+}
+function sheetGoal(){
+  const d = sheet.draft, isNew = !sheet.id;
+  const tpl = isNew ? `<div class="field"><span class="flabel">Start from a suggestion</span><div class="chips">${TEMPLATES.map((t, i) => `<button class="chip" data-act="tpl" data-i="${i}">${esc(t.label)}</button>`).join("")}</div></div>` : "";
+  const typeSeg = isNew ? `<div class="seg" role="group" aria-label="Goal type">${[["total", "Total"], ["progression", "Progression"], ["milestone", "Milestones"]].map(([v, l]) => `<button data-act="g-type" data-v="${v}" aria-pressed="${d.type === v}">${l}</button>`).join("")}</div>` : "";
+  const typeHint = {total:"Reach an amount by a date, like 100 km in 100 days.", progression:"Raise a level each week, like a long run from 5 to 21 km.", milestone:"A checklist of steps with due dates."}[d.type];
+  let fields = `<div class="field"><label for="g-name">Name</label><input class="input" id="g-name" data-f="name" maxlength="50" value="${esc(d.name)}" placeholder="${d.type === "milestone" ? "e.g. Portfolio website" : "e.g. Run 100 km"}"></div>`;
+  const unitField = `<div class="field"><label for="g-unit">Unit</label><input class="input" id="g-unit" data-f="unit" list="unit-list" maxlength="14" value="${esc(d.unit)}" placeholder="km"><datalist id="unit-list">${UNITS.map(u => `<option value="${u}">`).join("")}</datalist></div>`;
+  if (d.type === "total") {
+    fields += `<div class="grid2"><div class="field"><label for="g-target">Target</label><input class="input mono" id="g-target" data-f="target" type="number" inputmode="decimal" min="0" step="any" value="${esc(d.target)}"></div>${unitField}</div>
+      <div class="field"><label for="g-start">Start</label><input class="input" id="g-start" data-f="start" type="date" value="${d.start}"></div>
+      <div class="field"><span class="flabel">End</span><div class="seg"><button data-act="g-seg" data-k="endMode" data-v="duration" aria-pressed="${d.endMode === "duration"}">Duration</button><button data-act="g-seg" data-k="endMode" data-v="date" aria-pressed="${d.endMode === "date"}">End date</button></div>
+      ${d.endMode === "duration" ? `<div class="grid2"><input class="input mono" id="g-durn" data-f="durN" type="number" inputmode="numeric" min="1" step="1" value="${esc(d.durN)}" aria-label="Duration"><select class="input" id="g-duru" data-f="durU" aria-label="Duration unit"><option value="days" ${d.durU === "days" ? "selected" : ""}>days</option><option value="weeks" ${d.durU === "weeks" ? "selected" : ""}>weeks</option></select></div>`
+        : `<input class="input" id="g-end" data-f="end" type="date" min="${d.start}" value="${d.end || ""}" aria-label="End date">`}</div>`;
+  } else if (d.type === "progression") {
+    const calcLabel = {end:"End date", step:"Step", to:"End value"}[d.calc];
+    fields += `<div class="grid2">${unitField}<div class="field"><label for="g-start">Start</label><input class="input" id="g-start" data-f="start" type="date" value="${d.start}"></div></div>
+      <div class="field"><span class="flabel">How often</span><div class="chips" role="group" aria-label="How often">${FREQS.map(([v, l]) => `<button class="chip" data-act="g-freq" data-v="${v}" aria-pressed="${d.freq === v}">${l}</button>`).join("")}</div>
+        ${d.freq === "days" ? `<div class="chips" role="group" aria-label="Days">${WD.map((w, i) => `<button class="chip" data-act="g-day" data-v="${i}" aria-pressed="${d.days.includes(i)}">${w}</button>`).join("")}</div>` : ""}</div>
+      <div class="field"><span class="flabel">Each time counts</span><div class="seg"><button data-act="g-seg" data-k="measure" data-v="best" aria-pressed="${d.measure !== "total"}">Best single entry</button><button data-act="g-seg" data-k="measure" data-v="total" aria-pressed="${d.measure === "total"}">Total</button></div></div>
+      <div class="field"><span class="flabel">Level goes up</span><div class="seg">${STEP_OPTS[d.freq].map(([v, l]) => `<button data-act="g-seg" data-k="stepEvery" data-v="${v}" aria-pressed="${d.stepEvery === v}">${l}</button>`).join("")}</div></div>
+      <div class="field"><span class="flabel">Calculate for me</span><div class="seg">${[["end", "End date"], ["step", "Step"], ["to", "End value"]].map(([v, l]) => `<button data-act="g-seg" data-k="calc" data-v="${v}" aria-pressed="${d.calc === v}">${l}</button>`).join("")}</div></div>
+      <div class="grid2"><div class="field"><label for="g-from">Start value</label><input class="input mono" id="g-from" data-f="from" type="number" inputmode="decimal" step="any" value="${esc(d.from)}"></div>
+        ${d.calc !== "to" ? `<div class="field"><label for="g-to">End value</label><input class="input mono" id="g-to" data-f="to" type="number" inputmode="decimal" step="any" value="${esc(d.to)}"></div>` : ""}
+        ${d.calc !== "step" ? `<div class="field"><label for="g-step">Step (${esc(stepPhrase(progDefaults({freq:d.freq, days:d.days, stepEvery:d.stepEvery})))})</label><input class="input mono" id="g-step" data-f="step" type="number" inputmode="decimal" step="any" value="${esc(d.step)}"></div>` : ""}
+        ${d.calc !== "end" ? `<div class="field"><label for="g-pend">End date</label><input class="input" id="g-pend" data-f="pEnd" type="date" min="${d.start}" value="${d.pEnd || ""}"></div>` : ""}</div>
+      <div class="xs muted">${calcLabel} is calculated from the other values.</div>`;
+  } else {
+    fields += `<div class="field"><span class="flabel">Steps</span><div style="display:flex;flex-direction:column;gap:8px">${d.steps.map(s => `<div class="step-edit">
+        <input class="input" data-step="${s.id}" data-sf="title" maxlength="80" value="${esc(s.title)}" placeholder="Step" aria-label="Step name">
+        <input class="input" data-step="${s.id}" data-sf="due" type="date" value="${s.due || ""}" aria-label="Due date">
+        <button class="x-btn" data-act="g-del-step" data-step="${s.id}" aria-label="Remove step">${IC.x}</button></div>`).join("")}</div>
+      <button class="link" data-act="g-add-step">Add a step</button></div>`;
+  }
+  const danger = isNew ? "" : sheet.confirmDel
+    ? `<div class="preview"><span class="warn">Delete this goal? Entries that only counted for it are kept in your log history but no longer shown.</span><div class="btn-row"><button class="btn sm danger" data-act="del-goal">Delete goal</button><button class="btn sm ghost" data-act="cancel-del-goal">Cancel</button></div></div>`
+    : `<div class="btn-row"><button class="link" data-act="archive-goal">${goalById(sheet.id)?.archived ? "Restore goal" : "Archive goal"}</button><button class="link danger" data-act="ask-del-goal">Delete goal</button></div>`;
+  return `<div class="grab"></div><div class="sheet-head"><div><div class="sh-title">${isNew ? "New goal" : "Edit goal"}</div><div class="sh-sub">${typeHint}</div></div>${closeX}</div>
+    ${tpl}${typeSeg}${fields}
+    <div class="preview" id="g-pv"></div>
+    <div class="err" id="g-err" hidden></div>
+    <button class="btn" data-act="save-goal">${isNew ? "Create goal" : "Save changes"}</button>${danger}`;
+}
+// live preview with the computed breakdown, plus warnings and suggestions
+function updateGoalPreview(){
+  const pv = $("#g-pv"); if (!pv || !sheet || sheet.type !== "goal") return;
+  const d = sheet.draft, u = esc(d.unit || "units"), lines = [];
+  if (d.type === "total") {
+    const end = totalEnd(d), target = num(d.target);
+    if (!end || !(target > 0)) { pv.innerHTML = `<span class="muted">Add a target and an end to see the breakdown.</span>`; return; }
+    if (end < d.start) { pv.innerHTML = `<span class="warn">The end is before the start.</span>`; return; }
+    const days = diffDays(d.start, end) + 1, perDay = target / days;
+    lines.push(`<b>${fmt(target)} ${u} in ${days} ${plural(days, "day")}</b>`, `≈ ${fmt(round1(perDay * 7))} ${u} a week · ${fmt(round1(perDay * 30.4))} a month · ${fmt(round2(perDay))} a day`, `Ends ${fmtDY(end)}`);
+    const unit = (d.unit || "").toLowerCase();
+    if (RUN_UNITS.includes(unit) && perDay * 7 > 80) lines.push(`<span class="warn">That's over 80 ${u} a week, which is a lot even for experienced runners.</span>`);
+    if (unit === "h" && perDay > 10) lines.push(`<span class="warn">That's more than 10 hours a day.</span>`);
+    if (days < 7) lines.push(`<span class="warn">Shorter than a week, so there's no weekly breakdown.</span>`);
+  } else if (d.type === "progression") {
+    const r = progDerived(d);
+    if (!r.ok) { pv.innerHTML = `<span class="muted">${esc(r.why || "Fill in the values to see the plan. Step and the direction (up or down) must match.")}</span>`; return; }
+    const O = OCC[r.p.freq];
+    lines.push(`<b>${fmt(r.from)} ${u} → ${fmt(r.to)} ${u}</b>`, `${fmtS(r.step)} ${u} ${esc(stepPhrase(r.p))} · ${esc(freqText(r.p))} · ${r.count} ${r.count === 1 ? O.one : O.many} · ends ${fmtDY(r.end)}`);
+    const unit = (d.unit || "").toLowerCase(), perWeek = Math.abs(r.step) * stepsPerWeek(r.p);
+    if (RUN_UNITS.includes(unit) && r.from > 0 && perWeek > r.from * 0.1 + 1e-9) {
+      const sug = Math.max(0.5, Math.round(r.from * 0.1 / stepsPerWeek(r.p) * 2) / 2);
+      lines.push(`<span class="warn">Runners usually add about 10% a week to avoid injury. Start with ${fmtS(sug)} ${u} a week?</span>${d.calc !== "step" ? ` <button class="link" data-act="apply-step" data-v="${sug}" style="padding:0">Use ${fmtS(sug)}</button>` : ""}`);
+    }
+    if (diffDays(d.start, r.end) > 730) lines.push(`<span class="warn">That plan runs over two years.</span>`);
+  } else {
+    const steps = d.steps.filter(s => s.title.trim());
+    if (!steps.length) { pv.innerHTML = `<span class="muted">Add at least one step.</span>`; return; }
+    const dated = steps.filter(s => s.due).sort((a, b) => a.due.localeCompare(b.due));
+    lines.push(`<b>${steps.length} ${plural(steps.length, "step")}</b>`, dated.length ? `Last due ${fmtDY(dated[dated.length - 1].due)}` : "No due dates. Add some to see whether you're on time.");
+  }
+  pv.innerHTML = lines.join("");
+}
+async function saveGoal(){
+  const err = $("#g-err"), fail = m => { err.textContent = m; err.hidden = false; };
+  const d = sheet.draft, name = (d.name || "").trim();
+  if (!name) return fail("Give the goal a name.");
+  const existing = sheet.id ? goalById(sheet.id) : null;
+  const g = existing ? existing : {id:newId(), createdAt:Date.now(), archived:false};
+  if (existing && existing.example) delete g.example;
+  if (d.type === "total") {
+    const target = num(d.target), end = totalEnd(d), unit = (d.unit || "").trim();
+    if (!(target > 0)) return fail("Set a target above 0.");
+    if (!unit) return fail("Add a unit, like km or hours.");
+    if (!d.start || !end) return fail("Set a start and an end.");
+    if (end < d.start) return fail("The end must be after the start.");
+    Object.assign(g, {type:"total", name, unit, target:round2(target), start:d.start, end});
+    delete g.prog; delete g.steps;
+  } else if (d.type === "progression") {
+    const unit = (d.unit || "").trim(), r = progDerived(d);
+    if (!unit) return fail("Add a unit, like km or reps.");
+    if (!r.ok) return fail("Check the values. The step has to move from the start value toward the end value.");
+    if (d.freq === "days" && !(d.days || []).length) return fail("Pick at least one day.");
+    Object.assign(g, {type:"progression", name, unit, start:d.start, end:r.end, prog:progDefaults({from:r.from, to:r.to, step:r.step, measure:d.measure, freq:d.freq, days:(d.days || []).slice(), stepEvery:d.stepEvery})});
+    delete g.target; delete g.steps;
+  } else {
+    const steps = d.steps.filter(s => s.title.trim()).map(s => ({id:s.id, title:s.title.trim(), due:s.due || "", done:!!s.done, doneAt:s.doneAt || ""}));
+    if (!steps.length) return fail("Add at least one step.");
+    Object.assign(g, {type:"milestone", name, unit:"", start:d.start || todayKey(), steps});
+    const dues = steps.map(s => s.due).filter(Boolean).sort();
+    g.end = dues.length ? dues[dues.length - 1] : "";
+    delete g.target; delete g.prog;
+  }
+  if (!existing) S.goals.push(g);
+  persist(); closeSheet();
+  view = {name:"goal", id:g.id}; showAllLogs = false;
+  render(); window.scrollTo(0, 0);
+  toast(existing ? "Goal saved" : "Goal created");
+}
+
+// Settings
+function sheetSettings(){
+  const th = S.settings.theme === "dark" ? "dark" : "light";
+  const archived = S.goals.filter(g => g.archived);
+  return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">Settings</div>${closeX}</div>
+    <div class="set-group"><div class="set-title">Appearance</div>
+      <div class="seg"><button data-act="set-theme" data-v="light" aria-pressed="${th === "light"}">Light</button><button data-act="set-theme" data-v="dark" aria-pressed="${th === "dark"}">Dark</button></div></div>
+    ${archived.length ? `<div class="set-group"><div class="set-title">Archived goals</div><div>${archived.map(g => `<div class="row-line"><div class="row-main"><div class="row-title">${esc(g.name)}</div></div><button class="btn sm ghost" data-act="restore-goal" data-id="${g.id}">Restore</button></div>`).join("")}</div></div>` : ""}
+    <div class="set-group"><div class="set-title">Data</div>
+      <div class="small muted">${!IN_CLAUDE ? "Saved on this phone only. Export a backup now and then, for example to iCloud Drive or Files." : mode === "cloud" ? "Saved to your Claude account, so it syncs across your devices." : "Saved on this device only. Open Headway while signed in to claude.ai to sync across devices."}</div>
+      <div class="btn-row"><button class="btn sm ghost" data-act="export">Export backup</button><label class="btn sm ghost" for="imp-file" style="cursor:pointer">Import backup</label><input type="file" id="imp-file" accept="application/json,.json,text/plain" hidden></div>
+      ${sheet.pasteOpen ? `<div class="field"><label for="imp-text">Paste a backup</label><textarea class="input" id="imp-text" rows="4" style="font-family:var(--mono);font-size:12px" placeholder='{"app":"headway", ...}'></textarea><button class="btn sm" data-act="import-text" style="align-self:flex-start">Import pasted backup</button></div>` : `<button class="link" data-act="paste-open">Paste a backup instead</button>`}
+      ${sheet.importData ? `<div class="preview"><span class="warn">Replace your ${S.goals.length} ${plural(S.goals.length, "goal")} with the ${sheet.importData.S.goals.length} ${plural(sheet.importData.S.goals.length, "goal")} from this backup${sheet.importData.exportedAt ? ` (${fmtDY(dayKey(new Date(sheet.importData.exportedAt)))})` : ""}? Your current goals and entries here are removed.</span><div class="btn-row"><button class="btn sm danger" data-act="import-confirm">Replace with backup</button><button class="btn sm ghost" data-act="import-cancel">Cancel</button></div></div>` : ""}
+      ${S.goals.some(g => g.example) ? `<button class="link" data-act="clear-examples">Clear example goals</button>` : `<button class="link" data-act="load-examples">Add example goals</button>`}
+      ${oldData ? `<button class="link" data-act="remove-old">Remove old Time Quest data</button>` : ""}
+      ${sheet.confirmReset ? `<div class="preview"><span class="warn">Delete all goals and entries? This can't be undone.</span><div class="btn-row"><button class="btn sm danger" data-act="reset-all">Delete everything</button><button class="btn sm ghost" data-act="cancel-reset">Cancel</button></div></div>`
+        : `<button class="link danger" data-act="ask-reset">Delete all Headway data</button>`}
+    </div>`;
+}
+
+/* ---------- Examples ---------- */
+function loadExamples(){
+  const t = todayKey(), add = (date, value, goalIds) => {
+    if (date > t) return;
+    const mk = monthOf(date);
+    (L[mk] || (L[mk] = {month:mk, entries:[], updatedAt:0})).entries.push({id:newId(), date, value, goalIds, ts:Date.now(), example:true});
+    L[mk].updatedAt = Date.now();
+  };
+  const run = {id:newId(), type:"total", name:"Run 100 km", unit:"km", target:100, start:addDays(t, -23), end:addDays(t, 76), example:true, createdAt:Date.now()};
+  const gym = {id:newId(), type:"total", name:"Gym 3× a week", unit:"sessions", target:36, start:addDays(t, -24), end:addDays(t, 59), example:true, createdAt:Date.now()};
+  const lr = {id:newId(), type:"progression", name:"Long run 5 → 21 km", unit:"km", start:addDays(t, -21), prog:{from:5, to:21, step:1, measure:"best", freq:"weekly", days:[0, 2, 4], stepEvery:"time"}, example:true, createdAt:Date.now()};
+  lr.end = addDays(lr.start, 17 * 7 - 1);
+  const year = t.slice(0, 4);
+  const read = {id:newId(), type:"total", name:"Read 12 books", unit:"books", target:12, start:`${year}-01-01`, end:`${year}-12-31`, example:true, createdAt:Date.now()};
+  const web = {id:newId(), type:"milestone", name:"Portfolio website", unit:"", start:addDays(t, -30), example:true, createdAt:Date.now(), steps:[
+    {id:newId(), title:"Pick a stack", due:addDays(t, -20), done:true, doneAt:addDays(t, -22)},
+    {id:newId(), title:"Design the pages", due:addDays(t, -6), done:true, doneAt:addDays(t, -5)},
+    {id:newId(), title:"Write case studies", due:addDays(t, 12), done:false},
+    {id:newId(), title:"Build", due:addDays(t, 30), done:false},
+    {id:newId(), title:"Launch", due:addDays(t, 45), done:false}]};
+  web.end = addDays(t, 45);
+  [[4, 5.0], [11, 4.4]].forEach(([o, v]) => add(addDays(run.start, o), v, [run.id]));
+  [[2, 5.4], [9, 6.0], [16, 7.3], [21, 6.2]].forEach(([o, v]) => { const dt = addDays(lr.start, o); add(dt, v, dt >= run.start ? [lr.id, run.id] : [lr.id]); });
+  [0, 2, 4, 7, 9, 11, 14, 16, 18, 21, 23].forEach(o => add(addDays(gym.start, o), 1, [gym.id]));
+  const dayOfYear = diffDays(read.start, t);
+  [0.06, 0.14, 0.23, 0.31, 0.42, 0.5, 0.6, 0.71, 0.86].forEach(f => add(addDays(read.start, Math.floor(dayOfYear * f)), 1, [read.id]));
+  S.goals.push(run, gym, lr, read, web);
+  invalidate(); persist(Object.keys(L));
+}
+function clearExamples(){
+  S.goals = S.goals.filter(g => !g.example);
+  const changed = [];
+  for (const [k, m] of Object.entries(L)) { const n = m.entries.length; m.entries = m.entries.filter(e => !e.example); if (m.entries.length !== n) { m.updatedAt = Date.now(); changed.push(k); } }
+  invalidate(); persist(changed);
+}
+
+/* ---------- Backup ---------- */
+const backupJSON = () => JSON.stringify({app:"headway", format:1, exportedAt:new Date().toISOString(), S, L});
+async function exportBackup(){
+  const name = `headway-backup-${todayKey()}.json`, data = backupJSON();
+  if (IN_CLAUDE) {
+    let dl = null;
+    try { dl = await window.claude.use("downloads"); } catch (e) {}
+    if (dl) {
+      try { await dl.save({filename:name, data}); toast("Backup saved"); return; }
+      catch (e) { if (e && (e.code === "declined" || e.code === "rate_limited")) return; }
+    }
+    try { await navigator.clipboard.writeText(data); toast("Backup copied. Paste it into Import in the other app."); }
+    catch (e) { toast("Saving files isn't available here. Try again from the claude.ai website."); }
+    return;
+  }
+  try {
+    const file = new File([data], name, {type:"application/json"});
+    if (navigator.canShare && navigator.canShare({files:[file]})) { await navigator.share({files:[file], title:"Headway backup"}); return; }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  const url = URL.createObjectURL(new Blob([data], {type:"application/json"})), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast("Backup downloaded");
+}
+function stageImport(text){
+  let d = null;
+  try { d = JSON.parse(text); } catch (e) {}
+  if (!d || d.app !== "headway" || !d.S || !Array.isArray(d.S.goals) || typeof d.L !== "object") { toast("That isn't a Headway backup."); return; }
+  sheet.importData = d; renderSheet();
+}
+async function applyImport(){
+  const d = sheet.importData; if (!d) return;
+  const oldMonths = Object.keys(L), theme = S.settings.theme;
+  S = normalize(clone(d.S)); S.settings.theme = S.settings.theme || theme;
+  L = {};
+  for (const [k, m] of Object.entries(d.L || {})) if (/^\d{4}-\d{2}$/.test(k) && m && Array.isArray(m.entries)) L[k] = {month:k, entries:m.entries, updatedAt:Date.now()};
+  invalidate();
+  if (mode === "cloud") for (const k of oldMonths) if (!L[k]) { try { await db.doc(`${logsPath}/${k}`).delete(); } catch (e) {} }
+  persist(Object.keys(L));
+  closeSheet(); view = {name:"home"}; render();
+  toast(`Imported ${S.goals.length} ${plural(S.goals.length, "goal")}`);
+}
+
+/* ---------- Toast ---------- */
+let toastT = null;
+function toast(msg){ const r = $("#toast-root"); r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => { r.innerHTML = ""; }, 2600); }
+
+/* ---------- Events ---------- */
+const H = {
+  "home": () => { view = {name:"home"}; pendingDel = null; render(); window.scrollTo(0, 0); },
+  "open-goal": t => { view = {name:"goal", id:t.dataset.id}; pendingDel = null; showAllLogs = false; render(); window.scrollTo(0, 0); },
+  "open-settings": () => openSheet({type:"settings"}),
+  "close-sheet": () => closeSheet(),
+  "new-goal": () => openSheet({type:"goal", id:null, draft:blankDraft("total")}),
+  "edit-goal": t => { const g = goalById(t.dataset.id); if (g) openSheet({type:"goal", id:g.id, draft:draftFromGoal(g)}); },
+  "tpl": t => { const tp = TEMPLATES[+t.dataset.i]; openSheet({type:"goal", id:null, draft:draftFromTemplate(tp)}); },
+  "g-type": t => { if (sheet.draft.type === t.dataset.v) return; const nd = blankDraft(t.dataset.v); nd.name = sheet.draft.name; sheet.draft = nd; renderSheet(); },
+  "g-seg": t => { sheet.draft[t.dataset.k] = t.dataset.v; renderSheet(); },
+  "g-freq": t => { const d = sheet.draft; d.freq = t.dataset.v; if (!STEP_OPTS[d.freq].some(([v]) => v === d.stepEvery)) d.stepEvery = STEP_DEFAULT[d.freq]; if (!Array.isArray(d.days) || !d.days.length) d.days = [0, 2, 4]; renderSheet(); },
+  "g-day": t => { const d = sheet.draft, v = Number(t.dataset.v); d.days = d.days.includes(v) ? d.days.filter(x => x !== v) : [...d.days, v].sort(); renderSheet(); },
+  "g-add-step": () => { sheet.draft.steps.push({id:newId(), title:"", due:"", done:false}); renderSheet(); },
+  "g-del-step": t => { sheet.draft.steps = sheet.draft.steps.filter(s => s.id !== t.dataset.step); renderSheet(); },
+  "apply-step": t => { sheet.draft.step = Number(t.dataset.v); renderSheet(); },
+  "save-goal": () => saveGoal(),
+  "archive-goal": () => { const g = goalById(sheet.id); if (!g) return; g.archived = !g.archived; persist(); closeSheet(); if (g.archived) view = {name:"home"}; render(); toast(g.archived ? "Goal archived. Restore it from Settings." : "Goal restored"); },
+  "ask-del-goal": () => { sheet.confirmDel = true; renderSheet(); },
+  "cancel-del-goal": () => { sheet.confirmDel = false; renderSheet(); },
+  "del-goal": () => { S.goals = S.goals.filter(g => g.id !== sheet.id); persist(); closeSheet(); view = {name:"home"}; render(); toast("Goal deleted"); },
+  "restore-goal": t => { const g = goalById(t.dataset.id); if (g) { g.archived = false; persist(); render(); renderSheet(); toast("Goal restored"); } },
+  "open-log": t => openSheet({type:"log", gid:t.dataset.id || (view.name === "goal" ? view.id : null), also:{}}),
+  "log-goal": t => { sheet.gid = t.dataset.id; sheet.also = {}; renderSheet(); },
+  "log-quick": t => { sheet.val = t.dataset.v; const i = $("#lg-val"); if (i) i.value = t.dataset.v; updateLogPreview(); },
+  "log-day": t => { sheet.date = t.dataset.v; renderSheet(); },
+  "save-log": () => saveLog(),
+  "ask-del-log": t => { pendingDel = t.dataset.id; render(); },
+  "cancel-del": () => { pendingDel = null; render(); },
+  "del-log": t => {
+    for (const [k, m] of Object.entries(L)) { const i = m.entries.findIndex(e => e.id === t.dataset.id); if (i >= 0) { m.entries.splice(i, 1); m.updatedAt = Date.now(); invalidate(); persist([k]); break; } }
+    pendingDel = null; render(); toast("Entry deleted");
+  },
+  "toggle-logs": () => { showAllLogs = !showAllLogs; render(); },
+  "toggle-step": t => { const g = goalById(t.dataset.id), s = g && g.steps.find(x => x.id === t.dataset.step); if (!s) return; s.done = !s.done; s.doneAt = s.done ? todayKey() : ""; persist(); render(); if (s.done && g.steps.every(x => x.done)) toast(`${g.name}: all steps done`); },
+  "add-step": t => {
+    const g = goalById(t.dataset.id), i = $("#new-step"), title = (i && i.value || "").trim();
+    if (!g || !title) { if (i) i.focus(); return; }
+    g.steps.push({id:newId(), title, due:"", done:false}); persist(); render(); const ni = $("#new-step"); if (ni) ni.focus();
+  },
+  "sug-dismiss": t => { S.dismissed[`${t.dataset.id}:${t.dataset.v}:${mondayOf(todayKey())}`] = true; persist(); render(); },
+  "sug-raise": t => { const g = goalById(t.dataset.id); if (!g) return; g.target = Number(t.dataset.v); persist(); render(); toast(`Goal raised to ${fmt(g.target)} ${g.unit}`); },
+  "sug-extend": t => { const g = goalById(t.dataset.id); if (!g) return; g.end = addDays(g.end, Number(t.dataset.v)); persist(); render(); toast(`New end date: ${fmtDY(g.end)}`); },
+  "sug-shift": t => { const g = goalById(t.dataset.id); if (!g) return; const w = Number(t.dataset.v); if (!shiftPlan(g, w)) return; persist(); render(); toast(w < 0 ? "Plan moved forward" : "Plan pushed back"); },
+  "sug-due": t => { const g = goalById(t.dataset.id), s = g && g.steps.find(x => x.id === t.dataset.v); if (!s) return; s.due = addDays(todayKey(), 7); persist(); render(); toast(`Moved to ${fmtD(s.due)}`); },
+  "set-theme": t => { S.settings.theme = t.dataset.v === "dark" ? "dark" : "light"; persist(); render(); renderSheet(); },
+  "load-examples": () => { loadExamples(); closeSheet(); view = {name:"home"}; render(); toast("Example goals added"); },
+  "clear-examples": () => { clearExamples(); closeSheet(); view = {name:"home"}; render(); toast("Examples cleared"); },
+  "remove-old": () => removeOldData(),
+  "ask-reset": () => { sheet.confirmReset = true; renderSheet(); },
+  "cancel-reset": () => { sheet.confirmReset = false; renderSheet(); },
+  "reset-all": () => resetAll(),
+  "export": () => exportBackup(),
+  "paste-open": () => { sheet.pasteOpen = true; renderSheet(); const t = $("#imp-text"); if (t) t.focus(); },
+  "import-text": () => { const t = $("#imp-text"); if (t && t.value.trim()) stageImport(t.value.trim()); },
+  "import-confirm": () => applyImport(),
+  "import-cancel": () => { sheet.importData = null; renderSheet(); }
+};
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-act]"); if (!t || t.disabled) return;
+  const fn = H[t.dataset.act]; if (fn) { e.preventDefault(); fn(t, e); }
+});
+document.addEventListener("input", e => {
+  const el = e.target;
+  if (!sheet) return;
+  if (sheet.type === "goal") {
+    if (el.dataset.f) { sheet.draft[el.dataset.f] = el.value; if (el.dataset.f === "start" || el.dataset.f === "durU") { renderSheet(); return; } updateGoalPreview(); }
+    else if (el.dataset.step) { const s = sheet.draft.steps.find(x => x.id === el.dataset.step); if (s) s[el.dataset.sf] = el.value; updateGoalPreview(); }
+  } else if (sheet.type === "log") {
+    if (el.id === "lg-val") { sheet.val = el.value; updateLogPreview(); }
+    else if (el.id === "lg-note") sheet.note = el.value;
+    else if (el.id === "lg-date") { if (el.value) { sheet.date = el.value; renderSheet(); } }
+    else if (el.dataset.also) sheet.also[el.dataset.also] = el.checked;
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "imp-file" && e.target.files && e.target.files[0]) { const r = new FileReader(); r.onload = () => stageImport(String(r.result || "")); r.readAsText(e.target.files[0]); e.target.value = ""; return; } if (sheet && sheet.type === "log" && e.target.dataset && e.target.dataset.also) sheet.also[e.target.dataset.also] = e.target.checked; });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && sheet) closeSheet();
+  if (e.key === "Enter" && e.target.id === "new-step") { e.preventDefault(); const b = document.querySelector('[data-act="add-step"]'); if (b) b.click(); }
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
+setInterval(() => { const ae = document.activeElement; if (!sheet && !(ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName))) render(); }, 5 * 60 * 1000);
+
+/* ---------- Sync ---------- */
+let mode = "local", db = null, uid = null, statePath = null, logsPath = null, oldData = false;
+const pendingW = new Map(), runningW = new Set();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const clone = o => JSON.parse(JSON.stringify(o));
+function queueSet(path, data){ pendingW.set(path, clone(data)); pump(path); }
+async function pump(path){
+  if (runningW.has(path)) return;
+  runningW.add(path);
+  try {
+    while (pendingW.has(path)) {
+      const d = pendingW.get(path); pendingW.delete(path);
+      try { await db.doc(path).set(d); }
+      catch (e) {
+        if (e && e.code === "unavailable") { await sleep(400 + Math.random() * 900); try { await db.doc(path).set(d); } catch (e2) { writeFailed(e2); } }
+        else writeFailed(e);
+      }
+    }
+  } finally { runningW.delete(path); }
+}
+function writeFailed(e){ toast(e && e.code === "quota_exceeded" ? "Storage is full. Delete old entries to keep syncing." : "Couldn't sync that change. It's still saved on this device."); }
+function persist(months = []){
+  S.updatedAt = Date.now();
+  saveLocal();
+  if (mode === "cloud") { queueSet(statePath, S); for (const k of new Set(months)) if (L[k]) queueSet(`${logsPath}/${k}`, L[k]); }
+}
+function adopt(id, data){ L[id] = clone(data); invalidate(); }
+async function connect(){
+  if (!window.claude || typeof window.claude.use !== "function") return;
+  let user = null;
+  try { [user, db] = await Promise.all([window.claude.use("user"), window.claude.use("db")]); } catch (e) { db = null; }
+  if (!db || !user) { db = null; return; }
+  try { uid = await user.id(); } catch (e) {}
+  if (!uid) { db = null; return; }
+  statePath = `data/users/${uid}/hw`; logsPath = `${statePath}/logs`;
+  let snap;
+  try { snap = await db.doc(statePath).get(); } catch (e) { db = null; return; }
+  mode = "cloud";
+  if (snap.exists && (snap.data().updatedAt || 0) >= (S.updatedAt || 0)) { S = normalize(clone(snap.data())); L = {}; invalidate(); }
+  else { if (!S.updatedAt) S.updatedAt = Date.now(); queueSet(statePath, S); for (const k of Object.keys(L)) queueSet(`${logsPath}/${k}`, L[k]); }
+  try {
+    const qs = await db.collection(logsPath).limit(1000).get();
+    for (const d of qs.docs) { const local = L[d.id]; if (d.exists && (!local || (d.data().updatedAt || 0) > (local.updatedAt || 0))) adopt(d.id, d.data()); }
+  } catch (e) {}
+  try { const o = await db.doc(`data/users/${uid}/state`).get(); oldData = !!o.exists; } catch (e) {}
+  saveLocal();
+  db.doc(statePath).onSnapshot(s => {
+    if (s.metadata.hasPendingWrites || !s.exists) return;
+    const r = s.data();
+    if ((r.updatedAt || 0) > (S.updatedAt || 0)) { S = normalize(clone(r)); saveLocal(); render(); if (sheet && sheet.type === "settings") renderSheet(); }
+  }, () => {});
+  db.collection(logsPath).onSnapshot(qs => {
+    let ch = false;
+    for (const d of qs.docs) { if (d.metadata.hasPendingWrites || !d.exists) continue; const local = L[d.id]; if (!local || (d.data().updatedAt || 0) > (local.updatedAt || 0)) { adopt(d.id, d.data()); ch = true; } }
+    if (ch) { saveLocal(); render(); }
+  }, () => {});
+  render();
+}
+async function removeOldData(){
+  try { localStorage.removeItem("timequest.v1"); } catch (e) {}
+  if (mode === "cloud" && uid) {
+    try {
+      const qs = await db.collection(`data/users/${uid}/state/months`).limit(1000).get();
+      for (const d of qs.docs) { try { await db.doc(`data/users/${uid}/state/months/${d.id}`).delete(); } catch (e) {} }
+      await db.doc(`data/users/${uid}/state`).delete();
+    } catch (e) { toast("Couldn't remove all of the old data. Try again later."); return; }
+  }
+  oldData = false; renderSheet(); toast("Old Time Quest data removed");
+}
+async function resetAll(){
+  if (mode === "cloud") for (const k of Object.keys(L)) { try { await db.doc(`${logsPath}/${k}`).delete(); } catch (e) {} }
+  const theme = S.settings.theme;
+  L = {}; invalidate(); S = blankState(); S.settings.theme = theme;
+  persist(); closeSheet(); view = {name:"home"}; render(); toast("All Headway data deleted");
+}
+
+/* ---------- Boot ---------- */
+const cached = loadLocal();
+S = normalize(cached && cached.S);
+L = (cached && cached.L) || {};
+render();
+if (IN_CLAUDE) connect();
+else if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator && location.protocol === "https:") window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>
