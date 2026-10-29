@@ -140,6 +140,8 @@ h1,h2,h3,h4,p{margin:0}
 .mrow:last-child{border-bottom:0}
 .mbar{height:4px;border-radius:2px;background:var(--track);overflow:hidden}
 .mbar i{display:block;height:100%;background:var(--accent)}
+.mbar i.over{background:var(--behind)}
+.seg.four button{font-size:13px;padding:9px 2px}
 .card.flush{padding-block:4px}
 .sug{border:1px dashed var(--accent);border-radius:20px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;font-size:14px}
 .row-line{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);min-width:0}
@@ -276,6 +278,10 @@ const TEMPLATES = [
   {label:"Long run 5 → 21 km", desc:"Progression · weekly, +1 km a week, longest run counts", d:{type:"progression", name:"Long run to half marathon", unit:"km", measure:"best", freq:"weekly", days:[0, 2, 4], stepEvery:"time", from:5, to:21, step:1, calc:"end"}},
   {label:"Push-ups 20 → 100 in one set", desc:"Progression · Mon, Wed, Fri, +5 a week", d:{type:"progression", name:"Push-ups in one set", unit:"reps", measure:"best", freq:"days", days:[0, 2, 4], stepEvery:"week", from:20, to:100, step:5, calc:"end"}},
   {label:"Plank 30 s → 3 min", desc:"Progression · daily, +10 s a week", d:{type:"progression", name:"Daily plank", unit:"s", measure:"best", freq:"daily", days:[0, 2, 4], stepEvery:"week", from:30, to:180, step:10, calc:"end"}},
+  {label:"Lose weight: 85 → 80 kg in 12 weeks", desc:"Target · less is better · latest weigh-in counts", d:{type:"value", name:"Reach 80 kg", unit:"kg", from:85, to:80, endMode:"duration", durN:12, durU:"weeks"}},
+  {label:"Run 5 km faster: 30 → 25 min", desc:"Target · less is better", d:{type:"value", name:"5 km in 25 min", unit:"min", from:30, to:25, endMode:"duration", durN:10, durU:"weeks"}},
+  {label:"At most 2 drinks a week for 12 weeks", desc:"Limit · less is better · 24 drinks", d:{type:"total", less:true, name:"Max 2 drinks a week", unit:"drinks", target:24, endMode:"duration", durN:12, durU:"weeks"}},
+  {label:"Screen time 4 h → 1 h a day", desc:"Progression · daily total, −15 min a week", d:{type:"progression", name:"Less screen time", unit:"min", measure:"total", freq:"daily", days:[0, 2, 4], stepEvery:"week", from:240, to:60, step:-15, calc:"end"}},
   {label:"Project with milestones", desc:"Milestones · steps with due dates", d:{type:"milestone", name:"New project", steps:["Plan", "Build", "Launch"]}}
 ];
 const UNITS = ["km", "h", "min", "sessions", "pages", "books", "reps", "times"];
@@ -434,36 +440,76 @@ function calc(g){
     else if (doneLately && aheadSteps > 0) { status = `${aheadSteps} ${aheadSteps === 1 ? su : su + "s"} ahead`; st = "ahead"; }
     else if (curMet) { status = P.freq === "days" ? "Today's session done" : `${O.Now}'s level done`; st = "ahead"; }
     else if (missed > 0) { status = missed === 1 ? `Missed last ${O.one}` : `Missed ${missed} ${O.many}`; st = "behind"; }
-    else if (curI < 0 && focus) { status = `Next: ${WD[wdOf(focus.a)]} · reach ${fmt(focusLevel)} ${g.unit}`; st = "neutral"; }
+    else if (curI < 0 && focus) { status = `Next: ${WD[wdOf(focus.a)]} · ${dir > 0 ? "reach" : "at most"} ${fmt(focusLevel)} ${g.unit}`; st = "neutral"; }
+    else if (P.measure === "total" && dir < 0) {
+      const leftT = round2(focusLevel - (curRes || 0));
+      if (leftT >= 0) { status = `${fmt(leftT)} ${g.unit} left ${O.now}`; st = "neutral"; } else { status = `Over ${O.now}'s level by ${fmt(-leftT)} ${g.unit}`; st = "behind"; }
+    }
     else if (P.measure === "total") { status = `${fmt(Math.abs(focusLevel - (curRes || 0)))} ${g.unit} to go ${O.now}`; st = "neutral"; }
-    else { status = `${O.Now}: reach ${fmt(focusLevel)} ${g.unit}`; st = "neutral"; }
-    return {type:"progression", P, O, occ, n, lv, res, met, best, curI, focusI, focus, focusLevel, curRes, curMet, missed, aheadSteps, reachedStep, finished, started, ended, logs, st, status,
+    else { status = `${O.Now}: ${dir > 0 ? "reach" : "at most"} ${fmt(focusLevel)} ${g.unit}`; st = "neutral"; }
+    return {type:"progression", dir, P, O, occ, n, lv, res, met, best, curI, focusI, focus, focusLevel, curRes, curMet, missed, aheadSteps, reachedStep, finished, started, ended, logs, st, status,
       pct:best == null ? 0 : clamp((best - P.from) / range, 0, 1), pacePct:started && !finished && !ended && n ? clamp((focusLevel - P.from) / range, 0, 1) : null,
       valText:curRes == null ? "–" : fmt(curRes), ofText:` / ${fmt(focusLevel)} ${g.unit}`,
       kindText:!started ? `Progression · starts ${fmtD(g.start)}` : ended ? "Progression · ended" : P.freq === "days" ? `Progression · ${daysLabel(P.days)}` : `Progression · ${O.one} ${focusI + 1} of ${n}`};
   }
-  // total
+  if (g.type === "value") {
+    // Target value: latest entry counts; pace line runs straight from the start value to the target
+    const from = g.from, to = g.to, down = to < from;
+    const days = Math.max(1, diffDays(g.start, g.end) + 1), dayN = clamp(diffDays(g.start, t) + 1, 0, days);
+    const seq = logs.slice().sort((a, b) => a.date.localeCompare(b.date) || a.ts - b.ts);
+    const cur = seq.length ? seq[seq.length - 1].value : null, curV = cur ?? from;
+    const paceAt = d => from + (to - from) * (d / days);
+    const paceV = paceAt(dayN), margin = down ? paceV - curV : curV - paceV;
+    const perDay = (to - from) / days, thr = Math.abs(perDay) * 3;
+    const reached = cur != null && (down ? cur <= to + 1e-9 : cur >= to - 1e-9);
+    const remain = dayN === 0 ? days : days - dayN + 1, needWeek = (to - curV) / Math.max(1, remain) * 7;
+    let status, st;
+    if (reached) { status = "Target reached"; st = "done"; }
+    else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
+    else if (ended) { status = `Ended at ${fmt(curV)} ${g.unit}`; st = "neutral"; }
+    else if (cur == null) { status = "Log your first value"; st = "neutral"; }
+    else if (margin >= thr) { status = `${fmt(round1(margin))} ${g.unit} ahead`; st = "ahead"; }
+    else if (margin <= -thr) { status = `${fmt(round1(-margin))} ${g.unit} behind`; st = "behind"; }
+    else { status = "On pace"; st = "ahead"; }
+    const left = diffDays(t, g.end);
+    return {type:"value", down, from, to, days, dayN, seq, cur, curV, paceAt, paceV, margin, perDay, needWeek, reached, finished:reached, started, ended, logs, st, status,
+      pct:clamp((curV - from) / ((to - from) || 1), 0, 1), pacePct:started && !ended && !reached ? dayN / days : null,
+      valText:cur == null ? "–" : fmt(cur), ofText:` → ${fmt(to)} ${g.unit}`,
+      kindText:!started ? `Target · starts ${fmtD(g.start)}` : ended ? `Target · ended ${fmtD(g.end)}` : `Target · ${left} ${plural(left, "day")} left`};
+  }
+  // total (more is better) or limit (less is better: stay under the target)
+  const less = !!g.less;
   const days = Math.max(1, diffDays(g.start, g.end) + 1);
   const dayN = clamp(diffDays(g.start, t) + 1, 0, days);
   const done = round2(logs.reduce((s, e) => s + e.value, 0));
-  const perDay = g.target / days, pace = perDay * dayN, ahead = done - pace;
+  const perDay = g.target / days, pace = perDay * dayN;
+  const margin = less ? pace - done : done - pace;        // > 0 is good either way
   const remain = dayN === 0 ? days : days - dayN + 1;
-  const needWeek = remain > 0 ? Math.max(0, g.target - done) / remain * 7 : 0;
-  const finished = done >= g.target - 1e-9;
+  const needWeek = remain > 0 ? Math.max(0, g.target - done) / remain * 7 : 0;   // more: needed a week; less: allowance left a week
+  const over = less && done > g.target + 1e-9;
+  const finished = less ? ended && !over : done >= g.target - 1e-9;
+  const thr = Math.max(perDay * 0.5, ["sessions", "books", "times", "reps", "drinks"].includes((g.unit || "").toLowerCase()) ? 0.5 : 0);
   let status, st;
-  if (finished) { status = "Goal reached"; st = "done"; }
-  else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
-  else if (ended) { status = `Ended at ${Math.round(done / g.target * 100)}%`; st = "neutral"; }
-  const thr = Math.max(perDay * 0.5, ["sessions", "books", "times", "reps"].includes((g.unit || "").toLowerCase()) ? 0.5 : 0);
-  if (finished || !started || ended) {}
-  else if (ahead >= thr) { status = `${fmt(round1(ahead))} ${g.unit} ahead`; st = "ahead"; }
-  else if (ahead <= -thr) { status = `${fmt(round1(-ahead))} ${g.unit} behind`; st = "behind"; }
-  else { status = "On pace"; st = "ahead"; }
-  const left = diffDays(t, g.end);
-  return {type:"total", days, dayN, done, perDay, pace, ahead, remain, needWeek, finished, started, ended, logs, st, status,
+  if (less) {
+    if (over) { status = `Limit exceeded by ${fmt(round1(done - g.target))} ${g.unit}`; st = "behind"; }
+    else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
+    else if (ended) { status = "Stayed under the limit"; st = "done"; }
+    else if (margin >= thr) { status = `${fmt(round1(margin))} ${g.unit} under budget`; st = "ahead"; }
+    else if (margin <= -thr) { status = `${fmt(round1(-margin))} ${g.unit} over budget`; st = "behind"; }
+    else { status = "On budget"; st = "ahead"; }
+  } else {
+    if (finished) { status = "Goal reached"; st = "done"; }
+    else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
+    else if (ended) { status = `Ended at ${Math.round(done / g.target * 100)}%`; st = "neutral"; }
+    else if (margin >= thr) { status = `${fmt(round1(margin))} ${g.unit} ahead`; st = "ahead"; }
+    else if (margin <= -thr) { status = `${fmt(round1(-margin))} ${g.unit} behind`; st = "behind"; }
+    else { status = "On pace"; st = "ahead"; }
+  }
+  const left = diffDays(t, g.end), label = less ? "Limit" : "Total";
+  return {type:"total", less, days, dayN, done, perDay, pace, ahead:margin, margin, remain, needWeek, over, finished, started, ended, logs, st, status,
     pct:clamp(done / g.target, 0, 1), pacePct:started && !ended && !finished ? dayN / days : null,
     valText:fmt(done), ofText:` / ${fmt(g.target)} ${g.unit}`,
-    kindText:!started ? `Total · starts ${fmtD(g.start)}` : ended ? `Total · ended ${fmtD(g.end)}` : `Total · ${left} ${plural(left, "day")} left`};
+    kindText:!started ? `${label} · starts ${fmtD(g.start)}` : ended ? `${label} · ended ${fmtD(g.end)}` : `${label} · ${left} ${plural(left, "day")} left`};
 }
 const sumIn = (logs, a, b) => round2(logs.reduce((s, e) => e.date >= a && e.date <= b ? s + e.value : s, 0));
 function totalWeeks(g, k){
@@ -471,6 +517,15 @@ function totalWeeks(g, k){
   for (let mon = mondayOf(g.start), i = 0; mon <= g.end && i < 600; mon = addDays(mon, 7), i++) {
     const a = mon < g.start ? g.start : mon, sun = addDays(mon, 6), b = sun > g.end ? g.end : sun;
     out.push({a, b, plan:k.perDay * (diffDays(a, b) + 1), done:sumIn(k.logs, a, b), now:t >= a && t <= b, future:a > t});
+  }
+  return out;
+}
+function valueWeeks(g, k){
+  const out = [], t = todayKey();
+  for (let mon = mondayOf(g.start), i = 0; mon <= g.end && i < 600; mon = addDays(mon, 7), i++) {
+    const a = mon < g.start ? g.start : mon, sun = addDays(mon, 6), b = sun > g.end ? g.end : sun;
+    const inWeek = k.seq.filter(e => e.date >= a && e.date <= b);
+    out.push({a, b, plan:k.paceAt(diffDays(g.start, b) + 1), last:inWeek.length ? inWeek[inWeek.length - 1].value : null, now:t >= a && t <= b, future:a > t});
   }
   return out;
 }
@@ -487,7 +542,22 @@ function totalMonths(g, k){
 /* ---------- Suggestions (rules; you always decide) ---------- */
 function suggestion(g, k){
   const t = todayKey(), wkKey = mondayOf(t), key = s => `${g.id}:${s}:${wkKey}`;
-  if (g.type === "total" && k.started && !k.ended && !k.finished) {
+  if (g.type === "total" && g.less && k.started && !k.ended && !k.over) {
+    if (k.margin >= k.perDay * 7 && k.dayN / k.days > 0.25 && !S.dismissed[key("lower")]) {
+      const nt = Math.max(Math.ceil(k.done) + 1, Math.floor(g.target * 0.9));
+      if (nt < g.target) return {text:`You're well under your limit. Lower it to ${fmt(nt)} ${g.unit}, or keep the room?`,
+        actions:[{label:`Lower to ${fmt(nt)}`, act:"sug-raise", v:nt, primary:true}, {label:"Keep it", act:"sug-dismiss", v:"lower"}]};
+    }
+    if (-k.margin >= k.perDay * 3 && !S.dismissed[key("budget")])
+      return {text:`You're ${fmt(round1(-k.margin))} ${g.unit} over budget. To stay under the limit, keep it to ${fmt(round1(k.needWeek))} ${g.unit} a week from now on.`,
+        actions:[{label:"Got it", act:"sug-dismiss", v:"budget", primary:true}]};
+  }
+  if (g.type === "value" && k.started && !k.ended && !k.reached && k.cur != null && -k.margin >= Math.abs(k.perDay) * 7 && !S.dismissed[key("extend")]) {
+    const extra = Math.ceil(-k.margin / Math.abs(k.perDay));
+    return {text:`You're ${fmt(round1(-k.margin))} ${g.unit} behind the pace line. To catch up you'd need ${fmtS(round1(k.needWeek))} ${g.unit} a week. Move the target date by ${extra} days instead?`,
+      actions:[{label:`Extend to ${fmtD(addDays(g.end, extra))}`, act:"sug-extend", v:extra, primary:true}, {label:"Keep the date", act:"sug-dismiss", v:"extend"}]};
+  }
+  if (g.type === "total" && !g.less && k.started && !k.ended && !k.finished) {
     const progress = k.dayN / k.days;
     if (k.ahead >= k.perDay * 7 && progress < 0.9 && !S.dismissed[key("raise")]) {
       const nt = niceUp(g.target * 1.1);
@@ -519,9 +589,21 @@ function suggestion(g, k){
 
 /* ---------- Charts ---------- */
 const CH = {W:342, H:184, x0:32, x1:336, yT:12, yB:156};
-function axisLabels(yMax){
-  const y = v => CH.yB - v / yMax * (CH.yB - CH.yT);
-  return [0, yMax / 2, yMax].map(v => `<line x1="${CH.x0}" y1="${y(v).toFixed(1)}" x2="${CH.x1}" y2="${y(v).toFixed(1)}" stroke="var(--line)"/>
+function niceStep(x){ const mag = Math.pow(10, Math.floor(Math.log10(x || 1))); for (const m of [1, 2, 2.5, 5, 10]) if (m * mag >= x - 1e-9) return m * mag; return 10 * mag; }
+// zoom in when values sit far from zero (e.g. body weight), otherwise start at 0
+function yRange(vals){
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  if (lo > 0 && hi - lo < hi * 0.5) {
+    const pad = Math.max((hi - lo) * 0.15, hi * 0.01), st = niceStep((hi - lo + 2 * pad) / 4);
+    let a = Math.floor((lo - pad) / st) * st, b = Math.ceil((hi + pad) / st) * st;
+    if (Math.round((b - a) / st) % 2) b += st;   // keep the middle gridline on a round number
+    return [round2(a), round2(b)];
+  }
+  return [0, niceMax(hi)];
+}
+function axisLabels(y0, y1){
+  const y = v => CH.yB - (v - y0) / (y1 - y0) * (CH.yB - CH.yT);
+  return [y0, (y0 + y1) / 2, y1].map(v => `<line x1="${CH.x0}" y1="${y(v).toFixed(1)}" x2="${CH.x1}" y2="${y(v).toFixed(1)}" stroke="var(--line)"/>
     <text x="${CH.x0 - 6}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)" font-family="var(--mono)">${fmt(round1(v))}</text>`).join("");
 }
 function monthTicks(start, end, xOf){
@@ -545,8 +627,8 @@ function chartTotal(g, k){
   const shade = k.dayN > 0 ? `<polygon points="${P(pts)} ${tx.toFixed(1)},${y(k.pace).toFixed(1)}" fill="${k.ahead >= 0 ? "var(--accent-soft)" : "var(--behind-soft)"}"/>` : "";
   const today = k.started && !k.ended ? `<line x1="${tx.toFixed(1)}" y1="${CH.yT}" x2="${tx.toFixed(1)}" y2="${CH.yB}" stroke="var(--line)"/>
     <text x="${Math.min(tx + 6, CH.x1 - 30).toFixed(1)}" y="${Math.max(ty - 8, CH.yT + 10).toFixed(1)}" font-size="11" font-weight="600" fill="var(--ink)" font-family="var(--font)">Today</text>` : "";
-  return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(`${fmt(k.done)} of ${fmt(g.target)} ${g.unit} so far, pace line at ${fmt(round1(k.pace))}`)}">
-    ${axisLabels(yMax)}${monthTicks(g.start, g.end, x)}${shade}
+  return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(g.less ? `${fmt(k.done)} of a ${fmt(g.target)} ${g.unit} limit used, allowance so far ${fmt(round1(k.pace))}` : `${fmt(k.done)} of ${fmt(g.target)} ${g.unit} so far, pace line at ${fmt(round1(k.pace))}`)}">
+    ${axisLabels(0, yMax)}${monthTicks(g.start, g.end, x)}${shade}${g.less ? `<line x1="${CH.x0}" y1="${y(g.target).toFixed(1)}" x2="${CH.x1}" y2="${y(g.target).toFixed(1)}" stroke="var(--behind)" stroke-width="1" stroke-dasharray="2 3"/><text x="${CH.x0 + 4}" y="${(y(g.target) - 5).toFixed(1)}" font-size="10" fill="var(--behind)" font-family="var(--mono)">limit</text>` : ""}
     <line x1="${x(0)}" y1="${y(0)}" x2="${x(k.days).toFixed(1)}" y2="${y(g.target).toFixed(1)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
     ${today}
     <polyline points="${P(pts)}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
@@ -555,8 +637,8 @@ function chartTotal(g, k){
 }
 function chartProg(g, k){
   const P = k.P, vals = [P.from, P.to, ...k.res.filter(v => v != null)], days = Math.max(1, diffDays(g.start, g.end) + 1);
-  const yMax = niceMax(Math.max(...vals));
-  const x = d => CH.x0 + d / days * (CH.x1 - CH.x0), y = v => CH.yB - v / yMax * (CH.yB - CH.yT);
+  const [y0, y1] = yRange(vals);
+  const x = d => CH.x0 + d / days * (CH.x1 - CH.x0), y = v => CH.yB - (v - y0) / (y1 - y0) * (CH.yB - CH.yT);
   let stair = "";
   k.occ.forEach((o, i) => {
     const xa = x(diffDays(g.start, o.a)), l = y(k.lv(o));
@@ -574,19 +656,37 @@ function chartProg(g, k){
   const tx = x(clamp(diffDays(g.start, todayKey()) + 0.5, 0, days));
   const today = k.started && !k.ended ? `<line x1="${tx.toFixed(1)}" y1="${CH.yT}" x2="${tx.toFixed(1)}" y2="${CH.yB}" stroke="var(--line)"/>` : "";
   return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(`Planned levels from ${fmt(P.from)} to ${fmt(P.to)} ${g.unit}, with your results as dots`)}">
-    ${axisLabels(yMax)}${monthTicks(g.start, g.end, x)}${today}
+    ${axisLabels(y0, y1)}${monthTicks(g.start, g.end, x)}${today}
     <path d="${stair}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
     ${dots}
   </svg>`;
 }
-function planBars(items){
-  const max = Math.max(1e-9, ...items.map(i => Math.max(i.plan, i.done || 0)));
-  const px = v => `${Math.max(0, v / max * 86).toFixed(1)}px`;
+function planBars(items, base = 0){
+  const max = Math.max(base + 1e-9, ...items.map(i => Math.max(i.plan, i.done || 0)));
+  const px = v => `${Math.max(0, (v - base) / (max - base) * 86).toFixed(1)}px`;
   return `<div class="bars-scroll" data-scroll-now><div class="bars">${items.map(i => `<div class="bcol" ${i.now ? "data-now" : ""} title="${esc(i.title)}">
-    <div class="bbox"><div class="bplan" style="height:${px(i.plan)}"></div>${i.done ? `<div class="bdone ${i.now ? "now" : i.miss ? "miss" : ""}" style="height:${px(i.done)}"></div>` : ""}</div>
+    <div class="bbox"><div class="bplan" style="height:${px(i.plan)}"></div>${i.done ? `<div class="bdone ${i.miss ? "miss" : i.now ? "now" : ""}" style="height:${px(i.done)}"></div>` : ""}</div>
     <span class="blab ${i.now ? "now" : ""}">${i.label}</span></div>`).join("")}</div></div>`;
 }
-
+function chartValue(g, k){
+  const vals = [k.from, k.to, ...k.seq.map(e => e.value)], [y0, y1] = yRange(vals);
+  const x = d => CH.x0 + d / k.days * (CH.x1 - CH.x0), y = v => CH.yB - (v - y0) / (y1 - y0) * (CH.yB - CH.yT);
+  const lastPer = {}; for (const e of k.seq) lastPer[e.date] = e.value;
+  const pts = [[x(0), y(k.from)], ...Object.keys(lastPer).sort().map(d => [x(diffDays(g.start, d) + 1), y(lastPer[d])])];
+  const Pp = p => p.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
+  const [tx, ty] = pts[pts.length - 1], lastD = (tx - CH.x0) / (CH.x1 - CH.x0) * k.days;
+  const shade = pts.length > 1 ? `<polygon points="${Pp(pts)} ${tx.toFixed(1)},${y(k.paceAt(lastD)).toFixed(1)}" fill="${k.margin >= 0 ? "var(--accent-soft)" : "var(--behind-soft)"}"/>` : "";
+  const dots = pts.slice(1).map(([a, b]) => `<circle cx="${a.toFixed(1)}" cy="${b.toFixed(1)}" r="${pts.length > 40 ? 2 : 3}" fill="var(--accent)"/>`).join("");
+  const today = k.started && !k.ended ? (() => { const xt = x(k.dayN); return `<line x1="${xt.toFixed(1)}" y1="${CH.yT}" x2="${xt.toFixed(1)}" y2="${CH.yB}" stroke="var(--line)"/>`; })() : "";
+  return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(`Your values from ${fmt(k.from)} toward ${fmt(k.to)} ${g.unit}, against a straight pace line`)}">
+    ${axisLabels(y0, y1)}${monthTicks(g.start, g.end, x)}${shade}${today}
+    <line x1="${CH.x0}" y1="${y(k.to).toFixed(1)}" x2="${CH.x1}" y2="${y(k.to).toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="2 3"/>
+    <text x="${CH.x1 - 2}" y="${(y(k.to) + (k.down ? 13 : -5)).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--accent-text)" font-family="var(--mono)">target</text>
+    <line x1="${x(0)}" y1="${y(k.from).toFixed(1)}" x2="${x(k.days).toFixed(1)}" y2="${y(k.to).toFixed(1)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <polyline points="${Pp(pts)}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
+  </svg>`;
+}
 /* ---------- Views ---------- */
 function applyTheme(){ document.documentElement.setAttribute("data-app-theme", S.settings.theme === "dark" ? "dark" : "light"); }
 function render(){
@@ -644,10 +744,12 @@ function emptyState(){
 function viewGoal(g){
   const k = calc(g);
   let html = `<div class="topbar"><button class="circle-btn" data-act="home" aria-label="Back to goals">${IC.back}</button><button class="pill-btn" data-act="edit-goal" data-id="${g.id}">Edit goal</button></div>`;
-  const metaRange = g.type === "milestone" ? k.kindText : `${g.type === "total" ? "Total" : "Progression"} · ${fmtD(g.start)} → ${fmtDY(g.end)}`;
+  const typeName = g.type === "total" ? (g.less ? "Limit" : "Total") : g.type === "value" ? "Target" : "Progression";
+  const metaRange = g.type === "milestone" ? k.kindText : `${typeName} · ${fmtD(g.start)} → ${fmtDY(g.end)}`;
   html += `<div class="title-block" style="padding:2px 0 4px"><div class="meta">${esc(metaRange)}</div><h1 class="h1">${esc(g.name)}</h1></div>`;
   if (g.type === "total") html += heroTotal(g, k) + weeksTotal(g, k) + monthsTotal(g, k);
   else if (g.type === "progression") html += heroProg(g, k) + weeksProg(g, k);
+  else if (g.type === "value") html += heroValue(g, k) + weeksValue(g, k);
   else html += heroMilestone(g, k) + stepsCard(g, k);
   const sug = suggestion(g, k);
   if (sug) html += `<div class="sug"><div>${esc(sug.text)}</div><div class="btn-row">${sug.actions.map(a => `<button class="btn sm ${a.primary ? "" : "ghost"}" data-act="${a.act}" data-id="${g.id}" data-v="${esc(a.v)}">${esc(a.label)}</button>`).join("")}</div></div>`;
@@ -655,32 +757,59 @@ function viewGoal(g){
   return html;
 }
 function heroTotal(g, k){
-  const side = !k.started ? `<div class="mono">${fmt(round1(k.perDay * 7))}/wk</div><div class="xs muted">planned</div>`
-    : k.finished ? `<div class="mono st-ahead">Done</div><div class="xs muted">goal reached</div>`
-    : `<div class="mono ${k.ahead >= 0 ? "st-ahead" : "st-behind"}">${fmtS(round1(k.ahead))} ${esc(g.unit)}</div><div class="xs muted">${k.ahead >= 0 ? "ahead of pace" : "behind pace"}</div>`;
-  const buf = k.ahead / (k.perDay || 1);
+  const less = k.less, u = esc(g.unit), buf = k.margin / (k.perDay || 1);
+  const side = !k.started ? `<div class="mono">${fmt(round1(k.perDay * 7))}/wk</div><div class="xs muted">${less ? "allowed" : "planned"}</div>`
+    : less && k.over ? `<div class="mono st-behind">Over</div><div class="xs muted">by ${fmt(round1(k.done - g.target))} ${u}</div>`
+    : k.finished ? `<div class="mono st-ahead">Done</div><div class="xs muted">${less ? "stayed under" : "goal reached"}</div>`
+    : `<div class="mono ${k.margin >= 0 ? "st-ahead" : "st-behind"}">${less ? fmt(round1(Math.abs(k.margin))) : fmtS(round1(k.margin))} ${u}</div><div class="xs muted">${less ? (k.margin >= 0 ? "under budget" : "over budget") : (k.margin >= 0 ? "ahead of pace" : "behind pace")}</div>`;
   return `<div class="card">
-    <div class="hero-top"><div class="big-wrap"><span class="big">${fmt(k.done)}</span><span class="mono small muted">/ ${fmt(g.target)} ${esc(g.unit)}</span></div><div class="hero-side">${side}</div></div>
+    <div class="hero-top"><div class="big-wrap"><span class="big">${fmt(k.done)}</span><span class="mono small muted">/ ${fmt(g.target)} ${u}${less ? " limit" : ""}</span></div><div class="hero-side">${side}</div></div>
     ${chartTotal(g, k)}
     <div class="stats3">
-      <div><div class="xs muted">Plan</div><div class="v">${fmt(round1(k.perDay * 7))} ${esc(g.unit)}/wk</div></div>
-      <div><div class="xs muted">Needed now</div><div class="v">${k.finished ? "–" : `${fmt(round1(k.needWeek))} ${esc(g.unit)}/wk`}</div></div>
-      <div><div class="xs muted">${buf >= 0 ? "Buffer" : "Behind by"}</div><div class="v">${k.started && !k.finished ? `≈ ${fmt(round1(Math.abs(buf)))} ${plural(round1(Math.abs(buf)), "day")}` : "–"}</div></div>
-    </div></div>`;
+      <div><div class="xs muted">${less ? "Allowance" : "Plan"}</div><div class="v">${fmt(round1(k.perDay * 7))} ${u}/wk</div></div>
+      <div><div class="xs muted">${less ? "Left per week" : "Needed now"}</div><div class="v">${k.finished || k.over ? "–" : `${fmt(round1(k.needWeek))} ${u}/wk`}</div></div>
+      <div><div class="xs muted">${buf >= 0 ? "Buffer" : less ? "Over by" : "Behind by"}</div><div class="v">${k.started && !k.finished && !k.over ? `≈ ${fmt(round1(Math.abs(buf)))} ${plural(round1(Math.abs(buf)), "day")}` : "–"}</div></div>
+    </div>${less ? `<div class="xs muted">Less is better · stay under the dashed allowance line</div>` : ""}</div>`;
 }
 function weeksTotal(g, k){
-  const ws = totalWeeks(g, k), now = ws.find(w => w.now);
-  const items = ws.map((w, i) => ({plan:w.plan, done:w.done, now:w.now, label:w.now ? "now" : String(i + 1),
-    title:`${fmtD(w.a)} – ${fmtD(w.b)}: ${fmt(w.done)} of ${fmt(round1(w.plan))} ${g.unit}`}));
-  const nowLine = now ? `This week: <b>${fmt(now.done)} of ${fmt(round1(now.plan))} ${esc(g.unit)}</b>, ${diffDays(todayKey(), now.b) + 1} ${plural(diffDays(todayKey(), now.b) + 1, "day")} left.` : `${ws.length} weeks, ${fmt(round1(k.perDay * 7))} ${esc(g.unit)} a week.`;
-  return `<div class="card"><div class="card-head"><span class="card-title">Weeks</span><span class="xs muted">dashed = plan · filled = done</span></div>
+  const ws = totalWeeks(g, k), now = ws.find(w => w.now), less = k.less, u = esc(g.unit);
+  const items = ws.map((w, i) => ({plan:w.plan, done:w.done, now:w.now, miss:less && w.done > w.plan + 1e-9, label:w.now ? "now" : String(i + 1),
+    title:`${fmtD(w.a)} – ${fmtD(w.b)}: ${fmt(w.done)} of ${fmt(round1(w.plan))} ${g.unit}${less ? " allowed" : ""}`}));
+  const daysLeft = now ? diffDays(todayKey(), now.b) + 1 : 0;
+  const nowLine = !now ? `${ws.length} weeks, ${fmt(round1(k.perDay * 7))} ${u} a week${less ? " allowed" : ""}.`
+    : less ? `This week: <b>${fmt(now.done)} of ${fmt(round1(now.plan))} ${u}</b> allowed, ${daysLeft} ${plural(daysLeft, "day")} left.`
+    : `This week: <b>${fmt(now.done)} of ${fmt(round1(now.plan))} ${u}</b>, ${daysLeft} ${plural(daysLeft, "day")} left.`;
+  return `<div class="card"><div class="card-head"><span class="card-title">Weeks</span><span class="xs muted">${less ? "dashed = allowance · amber = over" : "dashed = plan · filled = done"}</span></div>
     ${planBars(items)}<div class="small muted">${nowLine}</div></div>`;
 }
 function monthsTotal(g, k){
   const ms = totalMonths(g, k);
   if (ms.length < 2) return "";
-  return `<div class="card flush">${ms.map(m => `<div class="mrow"><span>${monthName(m.m)}</span><div class="mbar"><i style="width:${clamp(m.done / (m.plan || 1) * 100, 0, 100).toFixed(0)}%"></i></div>
+  return `<div class="card flush">${ms.map(m => `<div class="mrow"><span>${monthName(m.m)}</span><div class="mbar"><i class="${k.less && m.done > m.plan + 1e-9 ? "over" : ""}" style="width:${clamp(m.done / (m.plan || 1) * 100, 0, 100).toFixed(0)}%"></i></div>
     <span class="mono small ${m.future ? "muted" : ""}">${m.future && !m.done ? "–" : fmt(m.done)} / ${fmt(round1(m.plan))}</span></div>`).join("")}</div>`;
+}
+function heroValue(g, k){
+  const u = esc(g.unit);
+  const side = k.reached ? `<div class="mono st-ahead">Reached</div><div class="xs muted">target ${fmt(k.to)} ${u}</div>`
+    : !k.started || k.cur == null ? `<div class="mono">${fmtS(round1(k.perDay * 7))}/wk</div><div class="xs muted">planned</div>`
+    : `<div class="mono ${k.margin >= 0 ? "st-ahead" : "st-behind"}">${fmt(round1(Math.abs(k.margin)))} ${u}</div><div class="xs muted">${k.margin >= 0 ? "ahead of pace" : "behind pace"}</div>`;
+  return `<div class="card">
+    <div class="hero-top"><div class="big-wrap"><span class="big">${esc(k.valText)}</span><span class="mono small muted">→ ${fmt(k.to)} ${u}</span></div><div class="hero-side">${side}</div></div>
+    ${chartValue(g, k)}
+    <div class="stats3">
+      <div><div class="xs muted">Start → target</div><div class="v">${fmt(k.from)} → ${fmt(k.to)}</div></div>
+      <div><div class="xs muted">Pace today</div><div class="v">${fmt(round1(k.paceV))} ${u}</div></div>
+      <div><div class="xs muted">Needed</div><div class="v">${k.reached ? "–" : `${fmtS(round1(k.needWeek))} ${u}/wk`}</div></div>
+    </div><div class="xs muted">${k.down ? "Less is better" : "More is better"} · your latest entry counts</div></div>`;
+}
+function weeksValue(g, k){
+  const ws = valueWeeks(g, k), [base] = yRange([k.from, k.to, ...k.seq.map(e => e.value)]), u = esc(g.unit);
+  const items = ws.map((w, i) => ({plan:w.plan, done:w.last || 0, now:w.now, miss:w.last != null && (k.down ? w.last - w.plan : w.plan - w.last) > Math.abs(k.perDay) * 3 + 1e-9, label:w.now ? "now" : String(i + 1),
+    title:`${fmtD(w.a)} – ${fmtD(w.b)}: planned ${fmt(round1(w.plan))}${w.last != null ? `, you were at ${fmt(w.last)}` : ""} ${g.unit}`}));
+  const now = ws.find(w => w.now);
+  const line = now ? `Planned by ${fmtD(now.b)}: <b>${fmt(round1(now.plan))} ${u}</b>${k.cur != null ? `, you're at ${fmt(k.cur)}` : ""}.` : `${ws.length} weeks from ${fmt(k.from)} to ${fmt(k.to)} ${u}.`;
+  return `<div class="card"><div class="card-head"><span class="card-title">Weeks</span><span class="xs muted">dashed = planned · amber = off pace</span></div>
+    ${planBars(items, base)}<div class="small muted">${line}</div></div>`;
 }
 function heroProg(g, k){
   const P = k.P, O = k.O;
@@ -693,24 +822,25 @@ function heroProg(g, k){
     <div class="stats3">
       <div><div class="xs muted">From → to</div><div class="v">${fmt(P.from)} → ${fmt(P.to)}</div></div>
       <div><div class="xs muted">Step</div><div class="v">${fmtS(P.step)} ${esc(stepPhrase(P))}</div></div>
-      <div><div class="xs muted">Best so far</div><div class="v">${k.best == null ? "–" : `${fmt(k.best)} ${esc(g.unit)}`}</div></div>
+      <div><div class="xs muted">${k.dir < 0 ? "Lowest so far" : "Best so far"}</div><div class="v">${k.best == null ? "–" : `${fmt(k.best)} ${esc(g.unit)}`}</div></div>
     </div>
-    <div class="xs muted">${esc(`${P.measure === "total" ? "Total" : "Best single entry"} counts · ${freqText(P)}`)}</div></div>`;
+    <div class="xs muted">${esc(`${k.dir < 0 ? "Less is better · " : ""}${P.measure === "total" ? "Total" : k.dir < 0 ? "Lowest single entry" : "Best single entry"} counts · ${freqText(P)}`)}</div></div>`;
 }
 function weeksProg(g, k){
   const P = k.P, O = k.O, dayish = P.freq === "daily" || P.freq === "days";
   const items = k.occ.map((o, i) => {
     const now = i === k.curI;
     const label = now ? "now" : dayish ? String(parseDay(o.a).getDate()) : P.freq === "monthly" ? monthName(monthOf(o.a)) : String(i + 1);
-    return {plan:k.lv(o), done:k.res[i] || 0, now, miss:k.res[i] != null && !k.met(i), label,
+    return {plan:k.lv(o), done:k.res[i] || 0, now, miss:k.res[i] != null && !k.met(i) && (!now || k.dir < 0), label,
       title:`${O.Cap} ${i + 1} (${o.a === o.b ? `${WD[wdOf(o.a)]} ${fmtD(o.a)}` : `${fmtD(o.a)} – ${fmtD(o.b)}`}): level ${fmt(k.lv(o))}${k.res[i] != null ? `, you did ${fmt(k.res[i])}` : ""}`};
   });
   const line = !k.started || k.ended ? `${k.n} ${O.many}, ${freqText(P)}, from ${fmtD(g.start)} to ${fmtD(g.end)}.`
     : k.curI >= 0 ? `${O.Now}'s level: <b>${fmt(k.focusLevel)} ${esc(g.unit)}</b>${k.curRes != null ? `, you're at ${fmt(k.curRes)}` : ""}.`
     : k.focus ? `Next ${O.one}: <b>${WD[wdOf(k.focus.a)]} ${fmtD(k.focus.a)}</b>, level ${fmt(k.focusLevel)} ${esc(g.unit)}.` : "";
   const title = {daily:"Days", days:"Sessions", weekly:"Weeks", biweekly:"2-week blocks", monthly:"Months"}[P.freq];
-  return `<div class="card"><div class="card-head"><span class="card-title">${title}</span><span class="xs muted">dashed = level · filled = you</span></div>
-    ${planBars(items)}<div class="small muted">${line}</div></div>`;
+  const [base] = yRange([P.from, P.to, ...k.res.filter(v => v != null)]);
+  return `<div class="card"><div class="card-head"><span class="card-title">${title}</span><span class="xs muted">${k.dir < 0 ? "dashed = level · amber = above it" : "dashed = level · filled = you"}</span></div>
+    ${planBars(items, base)}<div class="small muted">${line}</div></div>`;
 }
 function heroMilestone(g, k){
   return `<div class="card">
@@ -785,13 +915,13 @@ function sheetLog(){
   if (sheet.date > max) sheet.date = max;
   if (sheet.date < g.start) sheet.date = g.start;
   const unitKey = g.unit.toLowerCase().trim();
-  const others = goals.filter(o => o.id !== g.id && o.unit.toLowerCase().trim() === unitKey);
+  const others = goals.filter(o => o.id !== g.id && o.unit.toLowerCase().trim() === unitKey && (o.type === "value") === (g.type === "value"));
   if (!sheet.also) sheet.also = {};
-  const quick = QUICK[unitKey] || [];
+  const quick = g.type === "value" ? [] : QUICK[unitKey] || [];
   const yest = addDays(t, -1);
   return `<div class="grab"></div><div class="sheet-head"><div><div class="sh-title">Log progress</div><div class="sh-sub">Any day since the goal started</div></div>${closeX}</div>
     ${goals.length > 1 ? `<div class="field"><span class="flabel">Goal</span><div class="chips" role="group" aria-label="Goal">${goals.map(o => `<button class="chip" data-act="log-goal" data-id="${o.id}" aria-pressed="${o.id === g.id}">${esc(o.name)}</button>`).join("")}</div></div>` : `<div><b style="font-weight:500">${esc(g.name)}</b></div>`}
-    <div class="field"><label for="lg-val">${g.type === "progression" && g.prog.measure !== "total" ? `Result (your best counts for the ${OCC[progDefaults(g.prog).freq].one})` : "Amount"}</label>
+    <div class="field"><label for="lg-val">${g.type === "value" ? "Value (your latest entry counts)" : g.type === "progression" && g.prog.measure !== "total" ? `Result (your ${g.prog.to < g.prog.from ? "lowest" : "best"} counts for the ${OCC[progDefaults(g.prog).freq].one})` : "Amount"}</label>
       <div class="inline-unit"><input class="input big-in" id="lg-val" type="number" inputmode="decimal" min="0" step="any" value="${esc(sheet.val ?? "")}" placeholder="0"><span>${esc(g.unit)}</span></div>
       ${quick.length ? `<div class="chips">${quick.map(q => `<button class="chip" data-act="log-quick" data-v="${q}">${fmt(q)} ${esc(g.unit)}</button>`).join("")}</div>` : ""}</div>
     <div class="field"><span class="flabel">Day</span><div class="chips" role="group" aria-label="Day">
@@ -807,18 +937,24 @@ function sheetLog(){
 function updateLogPreview(){
   const pv = $("#lg-pv"); if (!pv || !sheet) return;
   const g = goalById(sheet.gid), v = parseFloat(sheet.val);
-  if (!g || !(v > 0)) { pv.innerHTML = `<span class="muted">Enter an amount to see where it puts you.</span>`; return; }
-  const k = calc(g);
+  if (!g || !(v > 0)) { pv.innerHTML = `<span class="muted">Enter ${g && g.type === "value" ? "a value" : "an amount"} to see where it puts you.</span>`; return; }
+  const k = calc(g), u = esc(g.unit);
   if (g.type === "total") {
-    const nd = k.done + v, na = k.ahead + v;
-    pv.innerHTML = `<b>${fmt(round2(nd))} / ${fmt(g.target)} ${esc(g.unit)}</b><span class="${na >= 0 ? "st-ahead" : "st-behind"}">${k.started ? `${fmtS(round1(na))} ${esc(g.unit)} ${na >= 0 ? "ahead of pace" : "behind pace"}` : ""}</span>`;
+    const nd = round2(k.done + v), nm = k.margin + (k.less ? -v : v);
+    const msg = k.less ? (nd > g.target + 1e-9 ? "Over the limit" : `${fmt(round1(Math.abs(nm)))} ${u} ${nm >= 0 ? "under budget" : "over budget"}`) : `${fmtS(round1(nm))} ${u} ${nm >= 0 ? "ahead of pace" : "behind pace"}`;
+    pv.innerHTML = `<b>${fmt(nd)} / ${fmt(g.target)} ${u}${k.less ? " limit" : ""}</b><span class="${nm >= 0 && !(k.less && nd > g.target) ? "st-ahead" : "st-behind"}">${k.started ? msg : ""}</span>`;
+  } else if (g.type === "value") {
+    const last = k.seq.length ? k.seq[k.seq.length - 1] : null;
+    if (last && sheet.date < last.date) { pv.innerHTML = `<b>Saved as an earlier value</b><span class="muted">Your latest entry (${fmt(last.value)} ${u} on ${fmtD(last.date)}) still counts.</span>`; return; }
+    const m = k.down ? k.paceV - v : v - k.paceV, hit = k.down ? v <= k.to : v >= k.to;
+    pv.innerHTML = `<b>${fmt(v)} ${u} → target ${fmt(k.to)}</b><span class="${hit || m >= 0 ? "st-ahead" : "st-behind"}">${hit ? "Target reached" : `${fmt(round1(Math.abs(m)))} ${u} ${m >= 0 ? "ahead of" : "behind"} pace`}</span>`;
   } else {
     const i2 = k.occ.findIndex(o => o.a <= sheet.date && sheet.date <= o.b);
     if (i2 < 0) { pv.innerHTML = `<b>Not a scheduled day</b><span class="muted">It's still saved and counts toward your best so far.</span>`; return; }
-    const o = k.occ[i2], lv = k.lv(o), up = k.P.to >= k.P.from, prev = k.res[i2];
+    const o = k.occ[i2], lv = k.lv(o), up = k.dir > 0, prev = k.res[i2];
     const nv = k.P.measure === "total" ? round2((prev || 0) + v) : prev == null ? v : up ? Math.max(prev, v) : Math.min(prev, v);
     const ok = up ? nv >= lv - 1e-9 : nv <= lv + 1e-9;
-    pv.innerHTML = `<b>${k.O.Cap} ${i2 + 1}: ${fmt(nv)} / ${fmt(lv)} ${esc(g.unit)}</b><span class="${ok ? "st-ahead" : "muted"}">${ok ? "Level reached" : "Not at the level yet"}</span>`;
+    pv.innerHTML = `<b>${k.O.Cap} ${i2 + 1}: ${fmt(nv)} / ${fmt(lv)} ${u}</b><span class="${ok ? "st-ahead" : up ? "muted" : "st-behind"}">${up ? (ok ? "Level reached" : "Not at the level yet") : (ok ? "Within the level" : "Above the level")}</span>`;
   }
 }
 async function saveLog(){
@@ -844,7 +980,8 @@ async function saveLog(){
 // Goal sheet (create / edit)
 function draftFromGoal(g){
   const d = {type:g.type, name:g.name, unit:g.unit || "", start:g.start || todayKey(), steps:[]};
-  if (g.type === "total") Object.assign(d, {target:g.target, endMode:"date", end:g.end, durN:"", durU:"days"});
+  if (g.type === "total") Object.assign(d, {target:g.target, less:!!g.less, endMode:"date", end:g.end, durN:"", durU:"days"});
+  if (g.type === "value") Object.assign(d, {from:g.from, to:g.to, endMode:"date", end:g.end, durN:"", durU:"days"});
   if (g.type === "progression") { const p = progDefaults(Object.assign({}, g.prog)); Object.assign(d, {measure:p.measure, freq:p.freq, days:p.days.slice(), stepEvery:p.stepEvery, from:p.from, to:p.to, step:p.step, calc:"end", pEnd:g.end}); }
   if (g.type === "milestone") d.steps = (g.steps || []).map(s => Object.assign({}, s));
   return d;
@@ -852,7 +989,7 @@ function draftFromGoal(g){
 function draftFromTemplate(t){
   const today = todayKey(), d = Object.assign({start:today, unit:"", steps:[]}, JSON.parse(JSON.stringify(t.d)));
   if (d.yearEnd) { d.endMode = "date"; d.end = `${today.slice(0, 4)}-12-31`; delete d.yearEnd; }
-  if (d.type === "total" && !d.endMode) d.endMode = "date";
+  if ((d.type === "total" || d.type === "value") && !d.endMode) d.endMode = "date";
   if (d.type === "milestone") d.steps = (d.steps || []).map((title, i) => ({id:newId(), title, due:addDays(today, 14 * (i + 1)), done:false}));
   return d;
 }
@@ -860,7 +997,8 @@ function blankDraft(type){
   const t = todayKey();
   if (type === "progression") return {type, name:"", unit:"km", start:t, measure:"best", freq:"weekly", days:[0, 2, 4], stepEvery:"time", from:"", to:"", step:"", calc:"end", pEnd:addDays(t, 83), steps:[]};
   if (type === "milestone") return {type, name:"", unit:"", start:t, steps:[{id:newId(), title:"", due:"", done:false}]};
-  return {type:"total", name:"", unit:"km", start:t, target:"", endMode:"duration", durN:12, durU:"weeks", end:addDays(t, 83), steps:[]};
+  if (type === "value") return {type, name:"", unit:"kg", start:t, from:"", to:"", endMode:"duration", durN:12, durU:"weeks", end:addDays(t, 83), steps:[]};
+  return {type:"total", name:"", unit:"km", start:t, target:"", less:false, endMode:"duration", durN:12, durU:"weeks", end:addDays(t, 83), steps:[]};
 }
 const num = v => (v === "" || v == null) ? NaN : Number(v);
 // any two of end value / step / end date give the third
@@ -890,12 +1028,21 @@ function totalEnd(d){
 function sheetGoal(){
   const d = sheet.draft, isNew = !sheet.id;
   const tpl = isNew ? `<div class="field"><span class="flabel">Start from a suggestion</span><div class="chips">${TEMPLATES.map((t, i) => `<button class="chip" data-act="tpl" data-i="${i}">${esc(t.label)}</button>`).join("")}</div></div>` : "";
-  const typeSeg = isNew ? `<div class="seg" role="group" aria-label="Goal type">${[["total", "Total"], ["progression", "Progression"], ["milestone", "Milestones"]].map(([v, l]) => `<button data-act="g-type" data-v="${v}" aria-pressed="${d.type === v}">${l}</button>`).join("")}</div>` : "";
-  const typeHint = {total:"Reach an amount by a date, like 100 km in 100 days.", progression:"Raise a level each week, like a long run from 5 to 21 km.", milestone:"A checklist of steps with due dates."}[d.type];
-  let fields = `<div class="field"><label for="g-name">Name</label><input class="input" id="g-name" data-f="name" maxlength="50" value="${esc(d.name)}" placeholder="${d.type === "milestone" ? "e.g. Portfolio website" : "e.g. Run 100 km"}"></div>`;
+  const typeSeg = isNew ? `<div class="seg four" role="group" aria-label="Goal type">${[["total", "Total"], ["progression", "Progression"], ["value", "Target"], ["milestone", "Milestones"]].map(([v, l]) => `<button data-act="g-type" data-v="${v}" aria-pressed="${d.type === v}">${l}</button>`).join("")}</div>` : "";
+  const typeHint = {total:d.less ? "Stay under a limit by a date, like at most 24 drinks in 12 weeks." : "Reach an amount by a date, like 100 km in 100 days.", progression:"Move a level each week, up or down, like a long run from 5 to 21 km.", value:"Reach a value by a date, like 85 → 80 kg. Your latest entry counts.", milestone:"A checklist of steps with due dates."}[d.type];
+  let fields = `<div class="field"><label for="g-name">Name</label><input class="input" id="g-name" data-f="name" maxlength="50" value="${esc(d.name)}" placeholder="${d.type === "milestone" ? "e.g. Portfolio website" : d.type === "value" ? "e.g. Reach 80 kg" : d.less ? "e.g. Max 2 drinks a week" : "e.g. Run 100 km"}"></div>`;
   const unitField = `<div class="field"><label for="g-unit">Unit</label><input class="input" id="g-unit" data-f="unit" list="unit-list" maxlength="14" value="${esc(d.unit)}" placeholder="km"><datalist id="unit-list">${UNITS.map(u => `<option value="${u}">`).join("")}</datalist></div>`;
-  if (d.type === "total") {
-    fields += `<div class="grid2"><div class="field"><label for="g-target">Target</label><input class="input mono" id="g-target" data-f="target" type="number" inputmode="decimal" min="0" step="any" value="${esc(d.target)}"></div>${unitField}</div>
+  const endFields = `<div class="field"><label for="g-start">Start</label><input class="input" id="g-start" data-f="start" type="date" value="${d.start}"></div>
+      <div class="field"><span class="flabel">End</span><div class="seg"><button data-act="g-seg" data-k="endMode" data-v="duration" aria-pressed="${d.endMode === "duration"}">Duration</button><button data-act="g-seg" data-k="endMode" data-v="date" aria-pressed="${d.endMode === "date"}">End date</button></div>
+      ${d.endMode === "duration" ? `<div class="grid2"><input class="input mono" id="g-durn" data-f="durN" type="number" inputmode="numeric" min="1" step="1" value="${esc(d.durN)}" aria-label="Duration"><select class="input" id="g-duru" data-f="durU" aria-label="Duration unit"><option value="days" ${d.durU === "days" ? "selected" : ""}>days</option><option value="weeks" ${d.durU === "weeks" ? "selected" : ""}>weeks</option></select></div>`
+        : `<input class="input" id="g-end" data-f="end" type="date" min="${d.start}" value="${d.end || ""}" aria-label="End date">`}</div>`;
+  if (d.type === "value") {
+    fields += `<div class="grid2"><div class="field"><label for="g-from">Start value</label><input class="input mono" id="g-from" data-f="from" type="number" inputmode="decimal" step="any" value="${esc(d.from)}"></div>
+      <div class="field"><label for="g-to">Target value</label><input class="input mono" id="g-to" data-f="to" type="number" inputmode="decimal" step="any" value="${esc(d.to)}"></div></div>
+      ${unitField}${endFields}`;
+  } else if (d.type === "total") {
+    fields += `<div class="field"><span class="flabel">Direction</span><div class="seg"><button data-act="g-less" data-v="0" aria-pressed="${!d.less}">More is better</button><button data-act="g-less" data-v="1" aria-pressed="${!!d.less}">Less is better (limit)</button></div></div>
+      <div class="grid2"><div class="field"><label for="g-target">${d.less ? "Limit (at most)" : "Target"}</label><input class="input mono" id="g-target" data-f="target" type="number" inputmode="decimal" min="0" step="any" value="${esc(d.target)}"></div>${unitField}</div>
       <div class="field"><label for="g-start">Start</label><input class="input" id="g-start" data-f="start" type="date" value="${d.start}"></div>
       <div class="field"><span class="flabel">End</span><div class="seg"><button data-act="g-seg" data-k="endMode" data-v="duration" aria-pressed="${d.endMode === "duration"}">Duration</button><button data-act="g-seg" data-k="endMode" data-v="date" aria-pressed="${d.endMode === "date"}">End date</button></div>
       ${d.endMode === "duration" ? `<div class="grid2"><input class="input mono" id="g-durn" data-f="durN" type="number" inputmode="numeric" min="1" step="1" value="${esc(d.durN)}" aria-label="Duration"><select class="input" id="g-duru" data-f="durU" aria-label="Duration unit"><option value="days" ${d.durU === "days" ? "selected" : ""}>days</option><option value="weeks" ${d.durU === "weeks" ? "selected" : ""}>weeks</option></select></div>`
@@ -906,7 +1053,7 @@ function sheetGoal(){
       <div class="field"><span class="flabel">How often</span><div class="chips" role="group" aria-label="How often">${FREQS.map(([v, l]) => `<button class="chip" data-act="g-freq" data-v="${v}" aria-pressed="${d.freq === v}">${l}</button>`).join("")}</div>
         ${d.freq === "days" ? `<div class="chips" role="group" aria-label="Days">${WD.map((w, i) => `<button class="chip" data-act="g-day" data-v="${i}" aria-pressed="${d.days.includes(i)}">${w}</button>`).join("")}</div>` : ""}</div>
       <div class="field"><span class="flabel">Each time counts</span><div class="seg"><button data-act="g-seg" data-k="measure" data-v="best" aria-pressed="${d.measure !== "total"}">Best single entry</button><button data-act="g-seg" data-k="measure" data-v="total" aria-pressed="${d.measure === "total"}">Total</button></div></div>
-      <div class="field"><span class="flabel">Level goes up</span><div class="seg">${STEP_OPTS[d.freq].map(([v, l]) => `<button data-act="g-seg" data-k="stepEvery" data-v="${v}" aria-pressed="${d.stepEvery === v}">${l}</button>`).join("")}</div></div>
+      <div class="field"><span class="flabel">Level changes</span><div class="seg">${STEP_OPTS[d.freq].map(([v, l]) => `<button data-act="g-seg" data-k="stepEvery" data-v="${v}" aria-pressed="${d.stepEvery === v}">${l}</button>`).join("")}</div></div>
       <div class="field"><span class="flabel">Calculate for me</span><div class="seg">${[["end", "End date"], ["step", "Step"], ["to", "End value"]].map(([v, l]) => `<button data-act="g-seg" data-k="calc" data-v="${v}" aria-pressed="${d.calc === v}">${l}</button>`).join("")}</div></div>
       <div class="grid2"><div class="field"><label for="g-from">Start value</label><input class="input mono" id="g-from" data-f="from" type="number" inputmode="decimal" step="any" value="${esc(d.from)}"></div>
         ${d.calc !== "to" ? `<div class="field"><label for="g-to">End value</label><input class="input mono" id="g-to" data-f="to" type="number" inputmode="decimal" step="any" value="${esc(d.to)}"></div>` : ""}
@@ -938,18 +1085,29 @@ function updateGoalPreview(){
     if (!end || !(target > 0)) { pv.innerHTML = `<span class="muted">Add a target and an end to see the breakdown.</span>`; return; }
     if (end < d.start) { pv.innerHTML = `<span class="warn">The end is before the start.</span>`; return; }
     const days = diffDays(d.start, end) + 1, perDay = target / days;
-    lines.push(`<b>${fmt(target)} ${u} in ${days} ${plural(days, "day")}</b>`, `≈ ${fmt(round1(perDay * 7))} ${u} a week · ${fmt(round1(perDay * 30.4))} a month · ${fmt(round2(perDay))} a day`, `Ends ${fmtDY(end)}`);
+    if (d.less) lines.push(`<b>At most ${fmt(target)} ${u} in ${days} ${plural(days, "day")}</b>`, `Allowance ≈ ${fmt(round1(perDay * 7))} ${u} a week · ${fmt(round1(perDay * 30.4))} a month · ${fmt(round2(perDay))} a day`, `Ends ${fmtDY(end)} · less is better`);
+    else lines.push(`<b>${fmt(target)} ${u} in ${days} ${plural(days, "day")}</b>`, `≈ ${fmt(round1(perDay * 7))} ${u} a week · ${fmt(round1(perDay * 30.4))} a month · ${fmt(round2(perDay))} a day`, `Ends ${fmtDY(end)}`);
     const unit = (d.unit || "").toLowerCase();
-    if (RUN_UNITS.includes(unit) && perDay * 7 > 80) lines.push(`<span class="warn">That's over 80 ${u} a week, which is a lot even for experienced runners.</span>`);
-    if (unit === "h" && perDay > 10) lines.push(`<span class="warn">That's more than 10 hours a day.</span>`);
+    if (!d.less && RUN_UNITS.includes(unit) && perDay * 7 > 80) lines.push(`<span class="warn">That's over 80 ${u} a week, which is a lot even for experienced runners.</span>`);
+    if (!d.less && unit === "h" && perDay > 10) lines.push(`<span class="warn">That's more than 10 hours a day.</span>`);
     if (days < 7) lines.push(`<span class="warn">Shorter than a week, so there's no weekly breakdown.</span>`);
+  } else if (d.type === "value") {
+    const end = totalEnd(d), from = num(d.from), to = num(d.to);
+    if (!isNum(from) || !isNum(to) || !end) { pv.innerHTML = `<span class="muted">Add a start value, a target and an end to see the pace.</span>`; return; }
+    if (from === to) { pv.innerHTML = `<span class="warn">The target is the same as the start value.</span>`; return; }
+    if (end <= d.start) { pv.innerHTML = `<span class="warn">The end must be after the start.</span>`; return; }
+    const days = diffDays(d.start, end) + 1, wk = (to - from) / days * 7, unit = (d.unit || "").toLowerCase();
+    lines.push(`<b>${fmt(from)} → ${fmt(to)} ${u} by ${fmtDY(end)}</b>`, `${fmtS(round2(wk))} ${u} a week · ${to < from ? "less" : "more"} is better · your latest entry counts`);
+    if (unit === "kg" && wk < -1) lines.push(`<span class="warn">More than 1 kg a week is usually too fast to keep off. A later date may be easier to stick to.</span>`);
+    if (unit === "lb" && wk < -2) lines.push(`<span class="warn">More than 2 lb a week is usually too fast to keep off. A later date may be easier to stick to.</span>`);
   } else if (d.type === "progression") {
     const r = progDerived(d);
     if (!r.ok) { pv.innerHTML = `<span class="muted">${esc(r.why || "Fill in the values to see the plan. Step and the direction (up or down) must match.")}</span>`; return; }
     const O = OCC[r.p.freq];
     lines.push(`<b>${fmt(r.from)} ${u} → ${fmt(r.to)} ${u}</b>`, `${fmtS(r.step)} ${u} ${esc(stepPhrase(r.p))} · ${esc(freqText(r.p))} · ${r.count} ${r.count === 1 ? O.one : O.many} · ends ${fmtDY(r.end)}`);
+    if (r.to < r.from) lines.push(`Less is better: each ${O.one} counts as met when you stay at or under the level.`);
     const unit = (d.unit || "").toLowerCase(), perWeek = Math.abs(r.step) * stepsPerWeek(r.p);
-    if (RUN_UNITS.includes(unit) && r.from > 0 && perWeek > r.from * 0.1 + 1e-9) {
+    if (r.to > r.from && RUN_UNITS.includes(unit) && r.from > 0 && perWeek > r.from * 0.1 + 1e-9) {
       const sug = Math.max(0.5, Math.round(r.from * 0.1 / stepsPerWeek(r.p) * 2) / 2);
       lines.push(`<span class="warn">Runners usually add about 10% a week to avoid injury. Start with ${fmtS(sug)} ${u} a week?</span>${d.calc !== "step" ? ` <button class="link" data-act="apply-step" data-v="${sug}" style="padding:0">Use ${fmtS(sug)}</button>` : ""}`);
     }
@@ -975,18 +1133,30 @@ async function saveGoal(){
     if (!unit) return fail("Add a unit, like km or hours.");
     if (!d.start || !end) return fail("Set a start and an end.");
     if (end < d.start) return fail("The end must be after the start.");
-    Object.assign(g, {type:"total", name, unit, target:round2(target), start:d.start, end});
-    delete g.prog; delete g.steps;
+    Object.assign(g, {type:"total", name, unit, target:round2(target), start:d.start, end, less:!!d.less});
+    if (!g.less) delete g.less;
+    delete g.prog; delete g.steps; delete g.from; delete g.to;
+  } else if (d.type === "value") {
+    const from = num(d.from), to = num(d.to), end = totalEnd(d), unit = (d.unit || "").trim();
+    if (!isNum(from) || !isNum(to)) return fail("Add a start value and a target value.");
+    if (from === to) return fail("The target has to differ from the start value.");
+    if (!unit) return fail("Add a unit, like kg or min.");
+    if (!d.start || !end) return fail("Set a start and an end.");
+    if (end <= d.start) return fail("The end must be after the start.");
+    Object.assign(g, {type:"value", name, unit, from:round2(from), to:round2(to), start:d.start, end});
+    delete g.target; delete g.prog; delete g.steps; delete g.less;
   } else if (d.type === "progression") {
     const unit = (d.unit || "").trim(), r = progDerived(d);
     if (!unit) return fail("Add a unit, like km or reps.");
     if (!r.ok) return fail("Check the values. The step has to move from the start value toward the end value.");
     if (d.freq === "days" && !(d.days || []).length) return fail("Pick at least one day.");
+    delete g.less; delete g.from; delete g.to;
     Object.assign(g, {type:"progression", name, unit, start:d.start, end:r.end, prog:progDefaults({from:r.from, to:r.to, step:r.step, measure:d.measure, freq:d.freq, days:(d.days || []).slice(), stepEvery:d.stepEvery})});
     delete g.target; delete g.steps;
   } else {
     const steps = d.steps.filter(s => s.title.trim()).map(s => ({id:s.id, title:s.title.trim(), due:s.due || "", done:!!s.done, doneAt:s.doneAt || ""}));
     if (!steps.length) return fail("Add at least one step.");
+    delete g.less; delete g.from; delete g.to;
     Object.assign(g, {type:"milestone", name, unit:"", start:d.start || todayKey(), steps});
     const dues = steps.map(s => s.due).filter(Boolean).sort();
     g.end = dues.length ? dues[dues.length - 1] : "";
@@ -1045,7 +1215,11 @@ function loadExamples(){
   [0, 2, 4, 7, 9, 11, 14, 16, 18, 21, 23].forEach(o => add(addDays(gym.start, o), 1, [gym.id]));
   const dayOfYear = diffDays(read.start, t);
   [0.06, 0.14, 0.23, 0.31, 0.42, 0.5, 0.6, 0.71, 0.86].forEach(f => add(addDays(read.start, Math.floor(dayOfYear * f)), 1, [read.id]));
-  S.goals.push(run, gym, lr, read, web);
+  const wt = {id:newId(), type:"value", name:"Reach 80 kg", unit:"kg", from:85, to:80, start:addDays(t, -28), end:addDays(t, 55), example:true, createdAt:Date.now()};
+  const dr = {id:newId(), type:"total", less:true, name:"Max 2 drinks a week", unit:"drinks", target:24, start:addDays(t, -26), end:addDays(t, 57), example:true, createdAt:Date.now()};
+  [[0, 85], [4, 84.6], [8, 84.7], [12, 84.1], [16, 83.8], [21, 83.6], [25, 83.1]].forEach(([o, v]) => add(addDays(wt.start, o), v, [wt.id]));
+  [[1, 2], [5, 1], [12, 2], [19, 1], [24, 1]].forEach(([o, v]) => add(addDays(dr.start, o), v, [dr.id]));
+  S.goals.push(run, gym, lr, wt, dr, read, web);
   invalidate(); persist(Object.keys(L));
 }
 function clearExamples(){
@@ -1112,6 +1286,7 @@ const H = {
   "edit-goal": t => { const g = goalById(t.dataset.id); if (g) openSheet({type:"goal", id:g.id, draft:draftFromGoal(g)}); },
   "tpl": t => { const tp = TEMPLATES[+t.dataset.i]; openSheet({type:"goal", id:null, draft:draftFromTemplate(tp)}); },
   "g-type": t => { if (sheet.draft.type === t.dataset.v) return; const nd = blankDraft(t.dataset.v); nd.name = sheet.draft.name; sheet.draft = nd; renderSheet(); },
+  "g-less": t => { sheet.draft.less = t.dataset.v === "1"; renderSheet(); },
   "g-seg": t => { sheet.draft[t.dataset.k] = t.dataset.v; renderSheet(); },
   "g-freq": t => { const d = sheet.draft; d.freq = t.dataset.v; if (!STEP_OPTS[d.freq].some(([v]) => v === d.stepEvery)) d.stepEvery = STEP_DEFAULT[d.freq]; if (!Array.isArray(d.days) || !d.days.length) d.days = [0, 2, 4]; renderSheet(); },
   "g-day": t => { const d = sheet.draft, v = Number(t.dataset.v); d.days = d.days.includes(v) ? d.days.filter(x => x !== v) : [...d.days, v].sort(); renderSheet(); },
@@ -1143,7 +1318,7 @@ const H = {
     g.steps.push({id:newId(), title, due:"", done:false}); persist(); render(); const ni = $("#new-step"); if (ni) ni.focus();
   },
   "sug-dismiss": t => { S.dismissed[`${t.dataset.id}:${t.dataset.v}:${mondayOf(todayKey())}`] = true; persist(); render(); },
-  "sug-raise": t => { const g = goalById(t.dataset.id); if (!g) return; g.target = Number(t.dataset.v); persist(); render(); toast(`Goal raised to ${fmt(g.target)} ${g.unit}`); },
+  "sug-raise": t => { const g = goalById(t.dataset.id); if (!g) return; g.target = Number(t.dataset.v); persist(); render(); toast(g.less ? `Limit lowered to ${fmt(g.target)} ${g.unit}` : `Goal raised to ${fmt(g.target)} ${g.unit}`); },
   "sug-extend": t => { const g = goalById(t.dataset.id); if (!g) return; g.end = addDays(g.end, Number(t.dataset.v)); persist(); render(); toast(`New end date: ${fmtDY(g.end)}`); },
   "sug-shift": t => { const g = goalById(t.dataset.id); if (!g) return; const w = Number(t.dataset.v); if (!shiftPlan(g, w)) return; persist(); render(); toast(w < 0 ? "Plan moved forward" : "Plan pushed back"); },
   "sug-due": t => { const g = goalById(t.dataset.id), s = g && g.steps.find(x => x.id === t.dataset.v); if (!s) return; s.due = addDays(todayKey(), 7); persist(); render(); toast(`Moved to ${fmtD(s.due)}`); },

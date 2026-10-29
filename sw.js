@@ -1,5 +1,5 @@
 // Headway offline support: the page is fetched fresh when online (so updates arrive) and served from cache when offline.
-const CACHE = "headway-v1";
+const CACHE = "headway-v2";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
