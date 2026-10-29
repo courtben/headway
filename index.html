@@ -160,6 +160,22 @@ h1,h2,h3,h4,p{margin:0}
 .mbar i{display:block;height:100%;background:var(--accent)}
 .mbar i.over{background:var(--behind)}
 .sheet-panel.no-anim{animation:none}
+.app,.sheet-panel{touch-action:pan-y}
+.swipe{position:relative;overflow:hidden}
+.swipe-fg{position:relative;z-index:1;background:var(--bg);transition:transform .22s cubic-bezier(.2,.8,.2,1);touch-action:pan-y}
+.card .swipe-fg{background:var(--card)}
+.swipe-act{position:absolute;top:0;bottom:0;display:flex}
+.swipe-act.l{left:0} .swipe-act.r{right:0}
+.swipe-act button{border:0;width:88px;font-size:14px;font-weight:500;padding:0}
+.swipe-act.l button{background:var(--danger);color:#fff}
+.swipe-act.r button{background:var(--ink);color:var(--bg)}
+.swipe>.swipe-fg>.row-line{border-bottom:1px solid var(--line)}
+.swipe:last-child>.swipe-fg>.row-line{border-bottom:0}
+.swipe-act button:focus-visible{outline-offset:-3px}
+.x-btn.desk{display:none}
+@media (hover:hover) and (pointer:fine){.x-btn.desk{display:grid}}
+.toast{display:flex;align-items:center;gap:14px}
+.toast button{border:0;background:none;color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;padding:0}
 .chips.wrap{flex-wrap:wrap;overflow:visible}
 .custom-rep{border:1px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:12px}
 .rep-every{display:grid;grid-template-columns:auto 64px minmax(0,1fr);gap:10px;align-items:center;font-size:14px}
@@ -865,6 +881,8 @@ function render(){
   renderDock();
   const sc = v.querySelector("[data-scroll-now]"), now = sc && sc.querySelector("[data-now]");
   if (sc && now) sc.scrollLeft = Math.max(0, now.offsetLeft - sc.clientWidth / 2);
+  openSw = null;
+  if (typeof syncNav === "function") syncNav();
 }
 function bar(g, k){
   if (g.type === "milestone") {
@@ -874,6 +892,13 @@ function bar(g, k){
   }
   const cls = k.finished ? "done" : k.st === "behind" ? "behind" : "";
   return `<div class="tick"><div class="track"><div class="fill ${cls}" style="width:${(k.pct * 100).toFixed(1)}%"></div></div>${k.pacePct != null ? `<div class="mark" style="left:${(k.pacePct * 100).toFixed(1)}%"></div>` : ""}</div>`;
+}
+// swipe left = archive (right-hand button), swipe right = delete (left-hand button)
+function swipeWrap(inner, kind, id, canArchive){
+  return `<div class="swipe" data-kind="${kind}" data-id="${id}" ${canArchive ? "data-arch" : ""}>
+    <div class="swipe-act l"><button data-act="sw-del" data-kind="${kind}" data-id="${id}">Delete</button></div>
+    ${canArchive ? `<div class="swipe-act r"><button data-act="sw-arch" data-id="${id}">Archive</button></div>` : ""}
+    <div class="swipe-fg">${inner}</div></div>`;
 }
 function goalRow(g){
   const k = calc(g);
@@ -896,8 +921,8 @@ function viewHome(){
   const onPace = current.filter(r => r.k.st === "ahead").length, behind = current.filter(r => r.k.st === "behind").length;
   html += `<div class="summary"><div><b>${onPace}</b>on track</div><div><b class="${behind ? "st-behind" : ""}">${behind}</b>behind</div><div><b>${rows.filter(r => r.k.finished).length}</b>done</div></div>`;
   if (S.goals.some(g => g.example)) html += `<div class="banner"><span>These are example goals.</span><button class="link" data-act="clear-examples" style="padding:0">Remove them</button></div>`;
-  if (current.length) html += `<div class="goal-list">${current.map(r => goalRow(r.g)).join("")}</div>`;
-  if (past.length) html += `<div class="section-label">Finished</div><div class="goal-list">${past.map(r => goalRow(r.g)).join("")}</div>`;
+  if (current.length) html += `<div class="goal-list">${current.map(r => swipeWrap(goalRow(r.g), "goal", r.g.id, true)).join("")}</div>`;
+  if (past.length) html += `<div class="section-label">Finished</div><div class="goal-list">${past.map(r => swipeWrap(goalRow(r.g), "goal", r.g.id, true)).join("")}</div>`;
   return html;
 }
 function emptyState(){
@@ -1036,10 +1061,10 @@ function logsCard(g){
   const rows = list.map(e => {
     const others = (e.goalIds || []).filter(id => id !== g.id).map(goalById).filter(Boolean);
     const confirming = pendingDel === e.id;
-    return `<div class="row-line"><div class="row-main"><div class="row-title"><span class="num">${fmt(e.value)} ${esc(g.unit)}</span> <span class="muted">· ${fmtD(e.date)}</span></div>
+    return swipeWrap(`<div class="row-line"><div class="row-main"><div class="row-title"><span class="num">${fmt(e.value)} ${esc(g.unit)}</span> <span class="muted">· ${fmtD(e.date)}</span></div>
       ${e.note || others.length ? `<div class="row-sub">${esc(e.note || "")}${e.note && others.length ? " · " : ""}${others.length ? `also in ${esc(others.map(o => o.name).join(", "))}` : ""}</div>` : ""}</div>
       ${confirming ? `<div class="confirm">${others.length ? "Delete from all goals?" : "Delete?"}<button class="btn sm danger" data-act="del-log" data-id="${e.id}">Delete</button><button class="btn sm ghost" data-act="cancel-del">Keep</button></div>`
-        : `<button class="x-btn" data-act="ask-del-log" data-id="${e.id}" aria-label="Delete entry from ${fmtD(e.date)}">${IC.x}</button>`}</div>`;
+        : `<button class="x-btn desk" data-act="ask-del-log" data-id="${e.id}" aria-label="Delete entry from ${fmtD(e.date)}">${IC.x}</button>`}</div>`, "entry", e.id, false);
   }).join("");
   return `<div class="card flush" style="padding-top:14px"><div class="card-title">Entries</div><div>${rows}</div>
     ${logs.length > 6 ? `<button class="link" data-act="toggle-logs" style="margin-bottom:8px">${showAllLogs ? "Show fewer" : `Show all ${logs.length}`}</button>` : ""}</div>`;
@@ -1072,6 +1097,7 @@ function renderSheet(){
   if (prev) root.querySelector(".sheet-panel").scrollTop = scroll;
   if (sheet.type === "goal") updateGoalPreview();
   if (sheet.type === "log") updateLogPreview();
+  syncNav();
 }
 const closeX = `<button class="circle-btn" data-act="close-sheet" aria-label="Close">${IC.x}</button>`;
 
@@ -1478,7 +1504,12 @@ async function applyImport(){
 
 /* ---------- Toast ---------- */
 let toastT = null;
-function toast(msg){ const r = $("#toast-root"); r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => { r.innerHTML = ""; }, 2600); }
+let undoFn = null;
+function toast(msg, undo){
+  const r = $("#toast-root"); undoFn = undo || null;
+  r.innerHTML = `<div class="toast" role="status">${esc(msg)}${undo ? `<button data-act="undo">Undo</button>` : ""}</div>`;
+  clearTimeout(toastT); toastT = setTimeout(() => { r.innerHTML = ""; undoFn = null; }, undo ? 5000 : 2600);
+}
 
 /* ---------- Events ---------- */
 function fixDraftStep(d){ const tmp = {rep:repNorm(d.rep), stepEvery:d.stepEvery}; fixStepEvery(tmp); d.stepEvery = tmp.stepEvery; }
@@ -1535,6 +1566,28 @@ const H = {
     for (const [k, m] of Object.entries(L)) { const i = m.entries.findIndex(e => e.id === t.dataset.id); if (i >= 0) { m.entries.splice(i, 1); m.updatedAt = Date.now(); invalidate(); persist([k]); break; } }
     pendingDel = null; render(); toast("Entry deleted");
   },
+  "sw-arch": t => {
+    const g = goalById(t.dataset.id); if (!g) return;
+    g.archived = true; persist(); render();
+    toast(`Archived “${g.name}”`, () => { g.archived = false; persist(); render(); });
+  },
+  "sw-del": t => {
+    if (t.dataset.kind === "goal") {
+      const i = S.goals.findIndex(g => g.id === t.dataset.id); if (i < 0) return;
+      const [g] = S.goals.splice(i, 1); persist(); if (view.name === "goal" && view.id === g.id) view = {name:"home"}; render();
+      toast(`Deleted “${g.name}”`, () => { S.goals.splice(Math.min(i, S.goals.length), 0, g); persist(); render(); });
+    } else {
+      for (const [k, m] of Object.entries(L)) {
+        const i = m.entries.findIndex(e => e.id === t.dataset.id);
+        if (i < 0) continue;
+        const [e] = m.entries.splice(i, 1); m.updatedAt = Date.now(); invalidate(); persist([k]); render();
+        const n = (e.goalIds || []).filter(goalById).length;
+        toast(n > 1 ? `Entry deleted from ${n} goals` : "Entry deleted", () => { m.entries.push(e); m.updatedAt = Date.now(); invalidate(); persist([k]); render(); });
+        break;
+      }
+    }
+  },
+  "undo": () => { const f = undoFn; undoFn = null; $("#toast-root").innerHTML = ""; if (f) f(); },
   "toggle-logs": () => { showAllLogs = !showAllLogs; render(); },
   "toggle-step": t => { const g = goalById(t.dataset.id), s = g && g.steps.find(x => x.id === t.dataset.step); if (!s) return; s.done = !s.done; s.doneAt = s.done ? todayKey() : ""; persist(); render(); if (s.done && g.steps.every(x => x.done)) toast(`${g.name}: all steps done`); },
   "add-step": t => {
@@ -1561,6 +1614,7 @@ const H = {
   "import-cancel": () => { sheet.importData = null; renderSheet(); }
 };
 document.addEventListener("click", e => {
+  if (swallowClick) { swallowClick = false; e.preventDefault(); e.stopPropagation(); return; }
   const t = e.target.closest("[data-act]"); if (!t || t.disabled) return;
   const fn = H[t.dataset.act]; if (fn) { e.preventDefault(); fn(t, e); }
 });
@@ -1587,6 +1641,87 @@ document.addEventListener("keydown", e => {
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
 setInterval(() => { const ae = document.activeElement; if (!sheet && !(ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName))) render(); }, 5 * 60 * 1000);
+
+/* ---------- Gestures ---------- */
+// Rows: drag sideways to reveal Archive (drag left) or Delete (drag right), then tap the button.
+// Back: drag from the left edge toward the middle. The browser/phone back button also goes back inside the app.
+const ACT_W = 88;
+let swallowClick = false, sw = null, openSw = null, edge = null, lastPop = 0, trapped = false;
+const isDeep = () => !!sheet || view.name !== "home";
+const setX = (el, x, anim) => { el.style.transition = anim ? "" : "none"; el.style.transform = x ? `translateX(${x}px)` : ""; };
+function closeOpenSw(){ if (openSw) { setX(openSw.querySelector(".swipe-fg"), 0, true); openSw = null; } }
+document.addEventListener("pointerdown", e => {
+  if (e.button > 0) return;
+  swallowClick = false;                      // only the click right after a drag is swallowed
+  if (openSw && !openSw.contains(e.target)) { closeOpenSw(); swallowClick = true; setTimeout(() => { swallowClick = false; }, 400); return; }
+  if (e.pointerType !== "mouse" && e.clientX < 28 && isDeep()) { edge = {x0:e.clientX, y0:e.clientY, dx:0, mode:"?", t0:Date.now(), el:sheet ? $(".sheet-panel") : $("#view")}; return; }
+  const el = e.target.closest(".swipe");
+  if (!el || e.target.closest(".swipe-act")) return;
+  const fg = el.querySelector(".swipe-fg");
+  sw = {el, fg, x0:e.clientX, y0:e.clientY, dx:0, mode:"?", base:openSw === el ? (parseFloat(fg.style.transform.replace(/[^-\d.]/g, "")) || 0) : 0, arch:el.hasAttribute("data-arch"), pid:e.pointerId};
+}, true);
+document.addEventListener("pointermove", e => {
+  if (edge) {
+    const dx = e.clientX - edge.x0, dy = e.clientY - edge.y0;
+    if (edge.mode === "?") { if (dx > 10 && dx > Math.abs(dy)) edge.mode = "h"; else if (Math.abs(dy) > 10 || dx < -10) { edge = null; return; } }
+    if (edge.mode === "h" && edge.el) { edge.dx = Math.max(0, dx); setX(edge.el, edge.dx); edge.el.style.opacity = String(1 - Math.min(0.35, edge.dx / innerWidth / 2)); }
+    return;
+  }
+  if (!sw) return;
+  const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
+  if (sw.mode === "?") {
+    if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { sw.mode = "h"; try { sw.el.setPointerCapture(sw.pid); } catch (er) {} if (openSw && openSw !== sw.el) closeOpenSw(); }
+    else if (Math.abs(dy) > 8) { sw = null; return; }
+  }
+  if (sw.mode !== "h") return;
+  let x = sw.base + dx;
+  if (!sw.arch && x < 0) x = 0;
+  const lim = ACT_W * 1.4;
+  if (Math.abs(x) > lim) x = Math.sign(x) * (lim + (Math.abs(x) - lim) * 0.25);
+  sw.dx = x; setX(sw.fg, x);
+}, {passive:true});
+function endGesture(){
+  if (edge) {
+    const g = edge; edge = null;
+    if (g.mode === "h" && g.el) {
+      if (g.dx > innerWidth * 0.33) {
+        g.el.style.transition = "transform .16s ease-out, opacity .16s"; g.el.style.transform = `translateX(${innerWidth}px)`; g.el.style.opacity = "0";
+        setTimeout(() => { goBack(g.t0); g.el.style.transition = "none"; g.el.style.transform = ""; g.el.style.opacity = ""; }, 150);
+      } else { setX(g.el, 0, true); g.el.style.opacity = ""; }
+      swallowClick = true; setTimeout(() => { swallowClick = false; }, 400);
+    }
+    return;
+  }
+  if (!sw) return;
+  const s0 = sw; sw = null;
+  if (s0.mode !== "h") return;
+  swallowClick = true; setTimeout(() => { swallowClick = false; }, 400);
+  if (s0.dx > ACT_W * 0.6) { setX(s0.fg, ACT_W, true); openSw = s0.el; }
+  else if (s0.dx < -ACT_W * 0.6 && s0.arch) { setX(s0.fg, -ACT_W, true); openSw = s0.el; }
+  else { setX(s0.fg, 0, true); if (openSw === s0.el) openSw = null; }
+}
+document.addEventListener("pointerup", endGesture);
+document.addEventListener("pointercancel", endGesture);
+// in-app back: close the sheet, otherwise leave the goal page
+function inAppBack(){
+  if (sheet) { closeSheet(); return true; }
+  if (view.name !== "home") { view = {name:"home"}; pendingDel = null; openSw = null; render(); window.scrollTo(0, 0); return true; }
+  return false;
+}
+function goBack(since = Date.now()){
+  if (lastPop >= since) return;                    // the phone already went back during this gesture
+  if (trapped) { try { history.back(); return; } catch (e) {} }
+  inAppBack(); syncNav();
+}
+// keep one history entry while you're inside a goal or a sheet, so back stays in the app
+function syncNav(){
+  if (isDeep() && !trapped) { try { history.pushState({headway:1}, ""); trapped = true; } catch (e) {} }
+}
+window.addEventListener("popstate", () => {
+  lastPop = Date.now(); trapped = false;
+  if (!inAppBack()) { try { history.back(); } catch (e) {} return; }   // nothing left to close: leave for real
+  syncNav();
+});
 
 /* ---------- Sync ---------- */
 let mode = "local", db = null, uid = null, statePath = null, logsPath = null, oldData = false;
