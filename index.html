@@ -160,6 +160,36 @@ h1,h2,h3,h4,p{margin:0}
 .mbar i{display:block;height:100%;background:var(--accent)}
 .mbar i.over{background:var(--behind)}
 .sheet-panel.no-anim{animation:none}
+.gr-wrap{position:relative}
+.goal-row.q{padding-right:56px}
+.quick-add{position:absolute;right:0;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:22px;border:1px solid var(--line);background:var(--card);color:var(--ink);display:grid;place-items:center;padding:0}
+.quick-add svg{width:18px;height:18px}
+.quick-add:active{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.children{margin:-6px 0 0 4px;padding-left:14px;border-left:2px solid var(--line)}
+.swipe-fg:has(.children){padding-bottom:12px;border-bottom:1px solid var(--line)}
+.swipe-fg{display:flow-root}
+.goal-row.child{padding:10px 0;gap:8px}
+.goal-row.child .gr-name{font-size:15px}
+.goal-row.child:last-child{border-bottom:0}
+.children .gr-wrap:last-child .goal-row{border-bottom:0}
+.swipe,.goal-row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.swipe.lifted{z-index:5;transition:none}
+.swipe.lifted .swipe-fg{background:var(--card);box-shadow:var(--shadow);border-radius:14px;transform:scale(1.02)}
+.goal-list>.swipe{transition:transform .16s ease}
+.goal-list>.swipe.lifted{transition:none}
+.swipe-act.r button.edit{background:var(--accent);color:var(--on-accent)}
+.row-main[data-act]{cursor:pointer}
+.tb-right{display:flex;gap:8px}
+.forecast{font-size:14px;margin-top:-4px}
+.legend i.proj{border-top:2px dotted var(--accent)}
+.pause-card{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:var(--track);font-size:14px}
+.pause-card b{font-weight:500}
+.area-chips{margin:-8px 0 -12px}
+.home-links{display:flex;gap:20px;padding-top:4px}
+.rv{font-size:14px;text-align:right;flex:none;max-width:48%}
+.totals{display:flex;flex-wrap:wrap;gap:8px 22px}
+.totals .v{font-size:18px;font-weight:500}
+.totals .s{font-size:13px;color:var(--muted)}
 .app,.sheet-panel{touch-action:pan-y}
 .swipe{position:relative;overflow:hidden}
 .swipe-fg{position:relative;z-index:1;background:var(--bg);transition:transform .22s cubic-bezier(.2,.8,.2,1);touch-action:pan-y}
@@ -351,12 +381,14 @@ const KINDS = [
   ["limit", "Stay under a limit", "No more than 2 drinks a week"],
   ["build", "Build up step by step", "Long run from 5 to 21 km"],
   ["value", "Reach a number", "Get down to 80 kg"],
-  ["project", "Finish a project", "Launch my portfolio site"]
+  ["project", "Finish a project", "Launch my portfolio site"],
+  ["group", "Combine goals", "Marathon: long runs plus monthly distance"]
 ];
-const PLACE = {total:"e.g. Run 100 km", regular:"e.g. Gym 3 times a week", limit:"e.g. Max 2 drinks a week", build:"e.g. Long run to 21 km", value:"e.g. Get to 80 kg", project:"e.g. Launch my website"};
+const PLACE = {group:"e.g. Marathon in April", total:"e.g. Run 100 km", regular:"e.g. Gym 3 times a week", limit:"e.g. Max 2 drinks a week", build:"e.g. Long run to 21 km", value:"e.g. Get to 80 kg", project:"e.g. Launch my website"};
 const UNIT_PH = {total:"km", regular:"sessions", limit:"drinks", build:"km", value:"kg"};
 function kindOf(g){
   if (g.type === "milestone") return "project";
+  if (g.type === "group") return "group";
   if (g.scope === "total") return g.count === "one" ? "value" : g.less ? "limit" : "total";
   if (g.change) return "build";
   return g.less ? "limit" : "regular";
@@ -366,6 +398,7 @@ function kindLabel(g){
   if (k === "total") return "Total";
   if (k === "value") return "Target";
   if (k === "project") return "Project";
+  if (k === "group") return "Combined";
   const lc = x => /^(Daily|Weekly|Monthly|Every)/.test(x) ? x[0].toLowerCase() + x.slice(1) : x;
   if (k === "limit") return g.scope === "total" ? "Limit" : `Limit per ${occName(g.rep).one}`;
   if (k === "build") return `Build-up, ${lc(repText(g.rep))}`;
@@ -406,7 +439,7 @@ function normalize(s){
   s = s && typeof s === "object" ? s : blankState();
   if (!Array.isArray(s.goals)) s.goals = [];
   s.settings = s.settings || {};
-  if (s.settings.theme !== "dark") s.settings.theme = "light";
+  if (!["dark", "system"].includes(s.settings.theme)) s.settings.theme = "light";
   if (!s.dismissed || typeof s.dismissed !== "object") s.dismissed = {};
   s.goals.forEach(migrateGoal);
   return s;
@@ -519,7 +552,26 @@ const STEP_EVERY = r => singleDay(r) ? [["period", isDaily(r) ? "Every day" : "E
   : r.u !== "month" ? [["period", `Every ${occName(r).one}`], ["month", "Every month"]] : [["period", `Every ${occName(r).one}`]];
 const stepDefault = r => singleDay(r) ? "week" : "period";
 function fixStepEvery(g){ if (!STEP_EVERY(g.rep).some(([v]) => v === g.stepEvery)) g.stepEvery = stepDefault(g.rep); }
-const stepIdx = (g, o) => g.stepEvery === "week" ? Math.floor(diffDays(g.start, o.a) / 7) : g.stepEvery === "month" ? monthsBetween(g.start, o.a) : o.i;
+// breaks: paused days don't count, and the end moves back by the same number of days
+function pausedIn(g, a, b){
+  let n = 0;
+  for (const p of g.pauses || []) { const x = p.a > a ? p.a : a, y = p.b < b ? p.b : b; if (x <= y) n += diffDays(x, y) + 1; }
+  return n;
+}
+const pauseAt = (g, d) => (g.pauses || []).find(p => p.a <= d && d <= p.b) || null;
+const activeOff = (g, d) => diffDays(g.start, d) - pausedIn(g, g.start, addDays(d, -1));
+function goalWindows(g){
+  const W = windows(g.start, g.end, g.rep);
+  if (!(g.pauses && g.pauses.length)) return W;
+  const out = [];
+  for (const o of W) {
+    const p = pausedIn(g, o.a, o.b), len = o.len - p;
+    if (len <= 0 || (g.scope === "period" && p * 2 >= o.len)) continue;
+    out.push(Object.assign({}, o, {len, i:out.length}));
+  }
+  return out;
+}
+const stepIdx = (g, o) => g.stepEvery === "week" ? Math.floor(activeOff(g, o.a) / 7) : g.stepEvery === "month" ? monthsBetween(g.start, addDays(o.a, -pausedIn(g, g.start, addDays(o.a, -1)))) : o.i;
 const stepPhrase = g => g.stepEvery === "week" ? "a week" : g.stepEvery === "month" ? "a month" : perPhrase(g.rep);
 const stepUnit = g => g.stepEvery === "week" ? "week" : g.stepEvery === "month" ? "month" : occName(g.rep).one;
 const stepsPerWeek = g => g.stepEvery === "week" ? 1 : g.stepEvery === "month" ? 7 / 30.44 : occPerWeek(g.rep);
@@ -549,6 +601,20 @@ function shiftPlan(g, n){
 // Milestones:        behind when a step is overdue
 function calc(g){
   const t = todayKey();
+  if (g.type === "group") {
+    const kids = (g.childIds || []).map(goalById).filter(c => c && !c.archived && c.type !== "group").map(c => [c, calc(c)]);
+    const n = kids.length, pct = n ? kids.reduce((a, [, x]) => a + x.pct, 0) / n : 0;
+    const pp = kids.map(([, x]) => x.pacePct).filter(v => v != null);
+    const finished = n > 0 && kids.every(([, x]) => x.finished), ended = n > 0 && !finished && kids.every(([, x]) => x.finished || x.ended);
+    const behind = kids.filter(([, x]) => x.st === "behind").length, onTrack = kids.filter(([, x]) => x.st === "ahead" || x.st === "done").length;
+    let status, st;
+    if (!n) { status = "No goals in it yet"; st = "neutral"; }
+    else if (finished) { status = "Done"; st = "done"; }
+    else if (behind) { status = `${behind} behind`; st = "behind"; }
+    else { status = `${onTrack} of ${n} on track`; st = onTrack ? "ahead" : "neutral"; }
+    return {kind:"group", kids, n, finished, ended, st, status, pct, pacePct:!finished && pp.length ? pp.reduce((a, b) => a + b, 0) / pp.length : null,
+      valText:`${Math.round(pct * 100)}%`, ofText:"", kindText:`${n} ${plural(n, "goal")} combined`};
+  }
   if (g.type === "milestone") {
     const steps = g.steps || [], n = steps.length, done = steps.filter(s => s.done).length;
     const overdue = steps.filter(s => !s.done && s.due && s.due < t);
@@ -567,7 +633,7 @@ function calc(g){
   const r = g.rep, O = occName(r), started = t >= g.start, ended = t > g.end;
   const logs = logsFor(g.id).filter(e => e.date >= g.start && e.date <= g.end);
   const seq = logs.slice().sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
-  const W = windows(g.start, g.end, r), n = W.length;
+  const W = goalWindows(g), n = W.length;
   const less = !!g.less, dir = less ? -1 : 1, one = g.count === "one", latest = one && g.pick === "latest";
   const better = (a, b) => a == null ? b : b == null ? a : dir > 0 ? Math.max(a, b) : Math.min(a, b);
   const reaches = (v, l) => v != null && (dir > 0 ? v >= l - 1e-9 : v <= l + 1e-9);
@@ -576,13 +642,15 @@ function calc(g){
   const curI = W.findIndex(o => o.a <= t && t <= o.b), nextI = W.findIndex(o => o.a > t);
   const days = Math.max(1, diffDays(g.start, g.end) + 1), dayN = clamp(diffDays(g.start, t) + 1, 0, days);
   const k = {r, O, W, n, res, curI, nextI, less, dir, one, latest, better, reaches, valIn, started, ended, logs, seq, days, dayN, left:diffDays(t, g.end)};
-  if (g.scope === "total") return one ? calcTotalOne(g, k) : calcTotalSum(g, k);
-  return calcPeriod(g, k);
+  const out = g.scope === "total" ? (one ? calcTotalOne(g, k) : calcTotalSum(g, k)) : calcPeriod(g, k);
+  const p = pauseAt(g, t);
+  if (p && started && !ended && !out.finished) { out.status = `On a break until ${fmtD(p.b)}`; out.st = "neutral"; out.paused = p; }
+  return out;
 }
 function calcTotalSum(g, k){
   const t = todayKey(), {W, less, started, ended} = k, target = g.to, u = g.unit;
   const Wt = W.reduce((s, o) => s + o.len, 0) || 1, perW = target / Wt;
-  const elapsed = d => W.reduce((s, o) => s + (d < o.a ? 0 : d >= o.b ? o.len : diffDays(o.a, d) + 1), 0);   // scheduled days up to and including d
+  const elapsed = d => W.reduce((s, o) => s + (d < o.a ? 0 : d >= o.b ? o.len : diffDays(o.a, d) + 1 - pausedIn(g, o.a, d)), 0);   // scheduled days up to and including d
   const eNow = !started ? 0 : elapsed(ended ? g.end : addDays(t, -1));   // days that are over; today only counts once it's done
   const pace = perW * eNow, done = round2(k.logs.reduce((s, e) => s + e.value, 0));
   const margin = less ? pace - done : done - pace;           // > 0 is good either way
@@ -613,7 +681,8 @@ function calcTotalSum(g, k){
     valText:fmt(done), ofText:` / ${fmt(target)} ${u}`, kindText:timeLeft(g, k)});
 }
 function calcTotalOne(g, k){
-  const {seq, less, started, ended, days, dayN} = k, from = g.from, to = g.to, u = g.unit;
+  const {seq, less, started, ended} = k, from = g.from, to = g.to, u = g.unit;
+  const days = Math.max(1, k.days - pausedIn(g, g.start, g.end)), dayN = clamp(k.dayN - pausedIn(g, g.start, todayKey()), 0, days);
   const cur = !seq.length ? null : k.latest ? seq[seq.length - 1].value : seq.reduce((b, e) => k.better(b, e.value), null);
   const curV = cur ?? from, paceAt = d => from + (to - from) * (d / days);
   const paceV = paceAt(Math.max(0, dayN - (ended ? 0 : 1))), margin = less ? paceV - curV : curV - paceV;
@@ -691,6 +760,7 @@ function totalMonths(g, k){
 
 /* ---------- Suggestions (rules; you always decide) ---------- */
 function suggestion(g, k){
+  if (g.type === "group") return null;
   const t = todayKey(), wkKey = mondayOf(t), key = s => `${g.id}:${s}:${wkKey}`, later = v => ({label:"Not now", act:"sug-dismiss", v});
   if (g.type === "milestone") {
     if (k.overdue.length && !S.dismissed[key("due")]) {
@@ -757,6 +827,43 @@ function lengthField(d, label){
        <button class="link" data-act="g-endmode" data-v="duration">Set a length instead</button>`}</div>`;
 }
 
+/* ---------- Forecast ---------- */
+// totals: straight-line rate so far; reach a number: trend of the last 6 weeks of entries
+function forecast(g, k){
+  const t = todayKey();
+  if (!k.started || k.ended || k.finished || k.paused) return null;
+  const when = (date, early, what) => early > 0 ? `At this pace you'll ${what} on ${fmtD(date)}, ${early} ${plural(early, "day")} early.`
+    : early === 0 ? `At this pace you'll ${what} right on time.` : `At this pace you'll ${what} on ${fmtD(date)}, ${-early} ${plural(-early, "day")} late.`;
+  if (k.kind === "tsum") {
+    if (k.over) return null;
+    const soFar = diffDays(g.start, t) + 1 - pausedIn(g, g.start, t);
+    if (soFar < 3 || k.done <= 0) return null;
+    const rate = k.done / soFar, left = diffDays(t, g.end);
+    if (g.less) {
+      const proj = round1(k.done + rate * left), ok = proj <= g.to + 1e-9;
+      return {text:ok ? `At this pace you'll end at about ${fmt(proj)} of ${fmt(g.to)} ${g.unit}.` : `At this pace you'll go over, to about ${fmt(proj)} of ${fmt(g.to)} ${g.unit}.`, cls:ok ? "st-ahead" : "st-behind", line:[k.dayN, k.done, k.days, proj]};
+    }
+    const need = Math.ceil((g.to - k.done) / rate - 1e-9), date = addDays(t, need), early = diffDays(date, g.end);
+    const d1 = Math.min(k.days, k.dayN + need);
+    return {text:when(date, early, "finish"), cls:early >= 0 ? "st-ahead" : "st-behind", line:[k.dayN, k.done, d1, Math.min(g.to, k.done + rate * (d1 - k.dayN))]};
+  }
+  if (k.kind === "tone" && k.cur != null) {
+    const pts = k.seq.filter(e => diffDays(e.date, t) <= 42);
+    if (pts.length < 2 || diffDays(pts[0].date, pts[pts.length - 1].date) < 5) return null;
+    const xs = pts.map(e => diffDays(g.start, e.date) + 1), ys = pts.map(e => e.value), n = xs.length;
+    const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0, sxx = 0; for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; }
+    const slope = sxx ? sxy / sxx : 0, lastX = xs[n - 1];
+    if (!((k.to - k.cur) * slope > 0)) return {text:"Your entries aren't moving toward the goal yet.", cls:"st-behind", line:null};
+    const need = Math.ceil((k.to - k.cur) / slope - 1e-9), date = addDays(pts[n - 1].date, need), early = diffDays(date, g.end);
+    const d1 = Math.min(k.days, lastX + need);
+    return {text:when(date, early, `reach ${fmt(k.to)} ${g.unit}`), cls:early >= 0 ? "st-ahead" : "st-behind", line:[lastX, k.cur, d1, k.cur + slope * (d1 - lastX)]};
+  }
+  return null;
+}
+const projLine = (k, x, y) => k.fc && k.fc.line ? `<line x1="${x(k.fc.line[0]).toFixed(1)}" y1="${y(k.fc.line[1]).toFixed(1)}" x2="${x(k.fc.line[2]).toFixed(1)}" y2="${y(k.fc.line[3]).toFixed(1)}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>` : "";
+const fcLine = k => k.fc ? `<div class="forecast ${k.fc.cls}">${esc(k.fc.text)}</div>` : "";
+
 /* ---------- Charts ---------- */
 const CH = {W:342, H:184, x0:32, x1:336, yT:12, yB:156};
 function niceStep(x){ const mag = Math.pow(10, Math.floor(Math.log10(x || 1))); for (const m of [1, 2, 2.5, 5, 10]) if (m * mag >= x - 1e-9) return m * mag; return 10 * mag; }
@@ -789,7 +896,7 @@ function monthTicks(start, end, xOf){
 const PT = p => p.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
 // cumulative line against the plan (the plan rises only on scheduled days)
 function chartTotalSum(g, k){
-  const yMax = niceMax(Math.max(g.to, k.done));
+  const yMax = niceMax(Math.max(g.to, k.done, k.fc && k.fc.line ? k.fc.line[3] : 0));
   const x = d => CH.x0 + d / k.days * (CH.x1 - CH.x0), y = v => CH.yB - v / yMax * (CH.yB - CH.yT);
   const per = {}; for (const e of k.logs) per[e.date] = (per[e.date] || 0) + e.value;
   const pts = [[x(0), y(0)]]; let cum = 0;
@@ -804,14 +911,14 @@ function chartTotalSum(g, k){
   return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="${esc(g.less ? `${fmt(k.done)} of a ${fmt(g.to)} ${g.unit} limit used, allowance so far ${fmt(round1(k.pace))}` : `${fmt(k.done)} of ${fmt(g.to)} ${g.unit} so far, plan at ${fmt(round1(k.pace))}`)}">
     ${axisLabels(0, yMax)}${monthTicks(g.start, g.end, x)}${shade}${limit}
     <polyline points="${PT(plan)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
-    ${today}
+    ${today}${projLine(k, x, y)}
     <polyline points="${PT(pts)}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
   </svg>`;
 }
 // your values against a straight line from the start value to the target
 function chartTotalOne(g, k){
-  const vals = [k.from, k.to, ...k.seq.map(e => e.value)], [y0, y1] = yRange(vals);
+  const vals = [k.from, k.to, ...k.seq.map(e => e.value), ...(k.fc && k.fc.line ? [k.fc.line[3]] : [])], [y0, y1] = yRange(vals);
   const x = d => CH.x0 + d / k.days * (CH.x1 - CH.x0), y = v => CH.yB - (v - y0) / (y1 - y0) * (CH.yB - CH.yT);
   const perDayV = {}; for (const e of k.seq) perDayV[e.date] = k.latest ? e.value : k.better(perDayV[e.date] ?? null, e.value);
   const pts = [[x(0), y(k.from)], ...Object.keys(perDayV).sort().map(d => [x(diffDays(g.start, d) + 1), y(perDayV[d])])];
@@ -824,7 +931,7 @@ function chartTotalOne(g, k){
     <line x1="${CH.x0}" y1="${y(k.to).toFixed(1)}" x2="${CH.x1}" y2="${y(k.to).toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="2 3"/>
     <text x="${CH.x1 - 2}" y="${(y(k.to) + (k.less ? 13 : -5)).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--accent-text)" font-family="var(--mono)">target</text>
     <line x1="${x(0)}" y1="${y(k.from).toFixed(1)}" x2="${x(k.days).toFixed(1)}" y2="${y(k.to).toFixed(1)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
-    <polyline points="${PT(pts)}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${projLine(k, x, y)}<polyline points="${PT(pts)}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
   </svg>`;
 }
@@ -870,7 +977,10 @@ const spanText = o => o.a === o.b ? `${WD[wdOf(o.a)]} ${fmtD(o.a)}` : `${fmtD(o.
 const legend = items => `<div class="legend">${items.map(([c, l]) => `<span><i class="${c}"></i>${l}</span>`).join("")}</div>`;
 const stat = (l, v, sub = "") => `<div><div class="l">${l}</div><div class="v">${v}</div>${sub ? `<div class="s">${esc(sub)}</div>` : ""}</div>`;
 const side = (v, l, cls = "") => `<div class="side-v ${cls}">${v}</div>${l ? `<div class="side-l">${l}</div>` : ""}`;
-function applyTheme(){ document.documentElement.setAttribute("data-app-theme", S.settings.theme === "dark" ? "dark" : "light"); }
+function applyTheme(){
+  const th = S.settings.theme, dark = th === "dark" || (th === "system" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.setAttribute("data-app-theme", dark ? "dark" : "light");
+}
 function render(){
   if (!S) return;
   applyTheme();
@@ -894,35 +1004,46 @@ function bar(g, k){
   return `<div class="tick"><div class="track"><div class="fill ${cls}" style="width:${(k.pct * 100).toFixed(1)}%"></div></div>${k.pacePct != null ? `<div class="mark" style="left:${(k.pacePct * 100).toFixed(1)}%"></div>` : ""}</div>`;
 }
 // swipe left = archive (right-hand button), swipe right = delete (left-hand button)
-function swipeWrap(inner, kind, id, canArchive){
-  return `<div class="swipe" data-kind="${kind}" data-id="${id}" ${canArchive ? "data-arch" : ""}>
+// swipe left = right-hand button (Archive for goals, Edit for entries), swipe right = Delete
+function swipeWrap(inner, kind, id, right){
+  return `<div class="swipe" data-kind="${kind}" data-id="${id}" ${right ? "data-arch" : ""}>
     <div class="swipe-act l"><button data-act="sw-del" data-kind="${kind}" data-id="${id}">Delete</button></div>
-    ${canArchive ? `<div class="swipe-act r"><button data-act="sw-arch" data-id="${id}">Archive</button></div>` : ""}
+    ${right === "archive" ? `<div class="swipe-act r"><button data-act="sw-arch" data-id="${id}">Archive</button></div>` : right === "edit" ? `<div class="swipe-act r"><button class="edit" data-act="edit-log" data-id="${id}">Edit</button></div>` : ""}
     <div class="swipe-fg">${inner}</div></div>`;
 }
-function goalRow(g){
-  const k = calc(g);
-  return `<button class="goal-row" data-act="open-goal" data-id="${g.id}">
+const quickable = g => g.type === "number" && g.count === "sum" && COUNTABLE.includes((g.unit || "").toLowerCase()) && !g.archived && g.start <= todayKey() && todayKey() <= g.end;
+function goalRow(g, child){
+  const k = calc(g), q = !child && quickable(g);
+  return `<div class="gr-wrap" data-id="${g.id}"><button class="goal-row ${q ? "q" : ""} ${child ? "child" : ""}" data-act="open-goal" data-id="${g.id}">
     <span class="gr-top"><span class="gr-name">${esc(g.name)}</span><span class="gr-val">${esc(k.valText)}<span>${esc(k.ofText)}</span></span></span>
     ${bar(g, k)}
     <span class="gr-bot"><span class="muted">${esc(k.kindText)}</span><span class="st-${k.st}">${esc(k.status)}</span></span>
-  </button>`;
+  </button>${q ? `<button class="quick-add" data-act="quick-add" data-id="${g.id}" aria-label="Log 1 ${esc(uN(1, g.unit))} for ${esc(g.name)}">${IC.plus}</button>` : ""}</div>`;
 }
 function topbar(){
   return `<div class="topbar"><div class="brand">${IC.logo}Headway</div><button class="circle-btn" data-act="open-settings" aria-label="Settings">${IC.sliders}</button></div>`;
 }
+let areaFilter = (() => { try { return localStorage.getItem("headway.area") || ""; } catch (e) { return ""; } })();
 function viewHome(){
   const date = new Date().toLocaleDateString("en-GB", {weekday:"long", day:"numeric", month:"long"});
   const active = S.goals.filter(g => !g.archived);
   let html = topbar() + `<div class="title-block"><div class="small muted">${date}</div><h1 class="h1">Goals</h1></div>`;
   if (!active.length) return html + emptyState();
-  const rows = active.map(g => ({g, k:calc(g)}));
-  const current = rows.filter(r => !r.k.finished && !r.k.ended), past = rows.filter(r => r.k.finished || r.k.ended);
-  const onPace = current.filter(r => r.k.st === "ahead").length, behind = current.filter(r => r.k.st === "behind").length;
-  html += `<div class="summary"><div><b>${onPace}</b>on track</div><div><b class="${behind ? "st-behind" : ""}">${behind}</b>behind</div><div><b>${rows.filter(r => r.k.finished).length}</b>done</div></div>`;
+  const inGroup = new Set(active.filter(g => g.type === "group").flatMap(g => g.childIds || []));
+  const all = active.filter(g => g.type !== "group").map(g => calc(g));
+  const cur = all.filter(k => !k.finished && !k.ended);
+  html += `<div class="summary"><div><b>${cur.filter(k => k.st === "ahead").length}</b>on track</div><div><b class="${cur.some(k => k.st === "behind") ? "st-behind" : ""}">${cur.filter(k => k.st === "behind").length}</b>behind</div><div><b>${all.filter(k => k.finished).length}</b>done</div></div>`;
   if (S.goals.some(g => g.example)) html += `<div class="banner"><span>These are example goals.</span><button class="link" data-act="clear-examples" style="padding:0">Remove them</button></div>`;
-  if (current.length) html += `<div class="goal-list">${current.map(r => swipeWrap(goalRow(r.g), "goal", r.g.id, true)).join("")}</div>`;
-  if (past.length) html += `<div class="section-label">Finished</div><div class="goal-list">${past.map(r => swipeWrap(goalRow(r.g), "goal", r.g.id, true)).join("")}</div>`;
+  if (new Date().getDay() === 1 && !S.dismissed[`review:day:${mondayOf(todayKey())}`]) html += `<div class="sug"><div>New week. Want to see how last week went?</div><div class="btn-row"><button class="btn sm" data-act="open-review">See last week</button><button class="btn sm ghost" data-act="sug-dismiss" data-id="review" data-v="day">Not now</button></div></div>`;
+  const areas = [...new Set(active.map(g => g.area).filter(Boolean))].sort();
+  if (areaFilter && !areas.includes(areaFilter)) areaFilter = "";
+  if (areas.length >= 2) html += `<div class="chips area-chips" role="group" aria-label="Area"><button class="chip" data-act="area-filter" data-v="" aria-pressed="${!areaFilter}">All</button>${areas.map(a => `<button class="chip" data-act="area-filter" data-v="${esc(a)}" aria-pressed="${areaFilter === a}">${esc(a)}</button>`).join("")}</div>`;
+  const top = active.filter(g => !inGroup.has(g.id) && (!areaFilter || g.area === areaFilter)).map(g => ({g, k:calc(g)}));
+  const block = r => r.g.type === "group" ? swipeWrap(goalRow(r.g) + `<div class="children">${r.k.kids.map(([c]) => goalRow(c, true)).join("")}</div>`, "goal", r.g.id, "archive") : swipeWrap(goalRow(r.g), "goal", r.g.id, "archive");
+  const current = top.filter(r => !r.k.finished && !r.k.ended), past = top.filter(r => r.k.finished || r.k.ended);
+  if (current.length) html += `<div class="goal-list">${current.map(block).join("")}</div>`;
+  if (past.length) html += `<div class="section-label">Finished</div><div class="goal-list">${past.map(block).join("")}</div>`;
+  html += `<div class="home-links"><button class="link" data-act="open-review">Last week</button><button class="link" data-act="open-history">History</button></div>`;
   return html;
 }
 function emptyState(){
@@ -934,17 +1055,34 @@ function emptyState(){
 }
 function viewGoal(g){
   const k = calc(g);
-  let html = `<div class="topbar"><button class="circle-btn" data-act="home" aria-label="Back to goals">${IC.back}</button><button class="pill-btn" data-act="edit-goal" data-id="${g.id}">Edit</button></div>`;
-  const meta = g.type === "milestone" ? k.kindText : `${kindLabel(g)} · ${fmtD(g.start)} – ${fmtDY(g.end)}`;
+  if (k.kind === "tsum" || k.kind === "tone") k.fc = forecast(g, k);
+  let html = `<div class="topbar"><button class="circle-btn" data-act="home" aria-label="Back to goals">${IC.back}</button><div class="tb-right">${g.type === "number" && !k.ended ? `<button class="pill-btn" data-act="open-pause" data-id="${g.id}">Pause</button>` : ""}<button class="pill-btn" data-act="edit-goal" data-id="${g.id}">Edit</button></div></div>`;
+  const meta = g.type === "milestone" || g.type === "group" ? k.kindText : `${kindLabel(g)} · ${fmtD(g.start)} – ${fmtDY(g.end)}`;
   html += `<div class="title-block" style="padding:2px 0 4px"><div class="meta">${esc(meta)}</div><h1 class="h1">${esc(g.name)}</h1></div>`;
+  if (g.type === "number") html += pauseCard(g);
   if (k.kind === "tsum") html += heroTotalSum(g, k) + barsTotalSum(g, k) + monthsCard(g, k);
   else if (k.kind === "tone") html += heroTotalOne(g, k) + barsTotalOne(g, k);
   else if (k.kind === "period") html += heroPeriod(g, k) + barsPeriod(g, k);
+  else if (k.kind === "group") html += heroGroup(g, k);
   else html += heroMilestone(g, k) + stepsCard(g, k);
   const sug = suggestion(g, k);
   if (sug) html += `<div class="sug"><div>${esc(sug.text)}</div><div class="btn-row">${sug.actions.map(a => `<button class="btn sm ${a.primary ? "" : "ghost"}" data-act="${a.act}" data-id="${g.id}" data-v="${esc(a.v)}">${esc(a.label)}</button>`).join("")}</div></div>`;
-  if (g.type !== "milestone") html += logsCard(g);
+  if (g.type === "number") html += logsCard(g);
   return html;
+}
+function pauseCard(g){
+  const t = todayKey(), list = (g.pauses || []).map((p, i) => [p, i]).filter(([p]) => p.b >= t);
+  if (!list.length) return "";
+  return list.map(([p, i]) => p.a <= t
+    ? `<div class="pause-card"><div><b>On a break until ${fmtD(p.b)}.</b> The plan picks up again after.</div><button class="btn sm ghost" data-act="resume-pause" data-id="${g.id}" data-v="${i}">Resume now</button></div>`
+    : `<div class="pause-card"><div><b>Break planned ${fmtD(p.a)} – ${fmtD(p.b)}.</b></div><button class="btn sm ghost" data-act="cancel-pause" data-id="${g.id}" data-v="${i}">Cancel break</button></div>`).join("");
+}
+function heroGroup(g, k){
+  return `<div class="card">
+    <div class="hero-top"><div class="big-wrap"><span class="big">${Math.round(k.pct * 100)}%</span><span class="of">combined</span></div><div class="hero-side">${side(esc(k.status), "", k.st === "behind" ? "st-behind" : k.st === "done" || k.st === "ahead" ? "st-ahead" : "")}</div></div>
+    ${bar(g, k)}
+    <div class="note">The average progress of the goals below.</div></div>
+    <div class="card flush" style="padding-top:6px">${k.kids.length ? k.kids.map(([c]) => goalRow(c, true)).join("") : `<div class="note" style="padding:12px 0">No goals in it yet. Edit to add some.</div>`}</div>`;
 }
 const countText = (g, k) => !k.one ? "Entries add up" : `Your ${k.latest ? "latest" : "best"} entry counts`;
 function heroTotalSum(g, k){
@@ -956,8 +1094,8 @@ function heroTotalSum(g, k){
     : side(`${fmt(round1(Math.abs(k.margin)))} ${u}`, less ? (k.margin >= 0 ? "to spare" : "over budget") : (k.margin >= 0 ? "ahead of plan" : "behind plan"), k.margin >= 0 ? "st-ahead" : "st-behind");
   return `<div class="card">
     <div class="hero-top"><div class="big-wrap"><span class="big">${fmt(k.done)}</span><span class="of">of ${fmt(g.to)} ${u}${less ? " allowed" : ""}</span></div><div class="hero-side">${sd}</div></div>
-    ${chartTotalSum(g, k)}
-    ${legend([["line", "You"], ["dash", less ? "Allowance" : "Plan"], ...(less ? [["limit", "Limit"]] : [])])}
+    ${chartTotalSum(g, k)}${fcLine(k)}
+    ${legend([["line", "You"], ["dash", less ? "Allowance" : "Plan"], ...(less ? [["limit", "Limit"]] : []), ...(k.fc && k.fc.line ? [["proj", "Forecast"]] : [])])}
     <div class="stats3">
       ${stat(less ? "Allowed" : "Plan", `${fmt(round1(k.perOcc))} ${esc(uN(round1(k.perOcc), g.unit))}`, ph)}
       ${stat(less ? "Still allowed" : "Needed", live ? `${fmt(round1(k.needOcc))} ${u}` : "–", live ? ph : "")}
@@ -990,8 +1128,8 @@ function heroTotalOne(g, k){
     : side(`${fmt(round1(Math.abs(k.margin)))} ${u}`, k.margin >= 0 ? "ahead of plan" : "behind plan", k.margin >= 0 ? "st-ahead" : "st-behind");
   return `<div class="card">
     <div class="hero-top"><div class="big-wrap"><span class="big">${esc(k.valText)}</span><span class="of">${u} · goal ${fmt(k.to)}</span></div><div class="hero-side">${sd}</div></div>
-    ${chartTotalOne(g, k)}
-    ${legend([["line", "You"], ["dash", "Plan"], ["goal", "Goal"]])}
+    ${chartTotalOne(g, k)}${fcLine(k)}
+    ${legend([["line", "You"], ["dash", "Plan"], ["goal", "Goal"], ...(k.fc && k.fc.line ? [["proj", "Forecast"]] : [])])}
     <div class="stats3">
       ${stat("Started at", `${fmt(k.from)} ${u}`)}
       ${stat("Plan for today", `${fmt(round1(k.paceV))} ${u}`)}
@@ -1061,10 +1199,10 @@ function logsCard(g){
   const rows = list.map(e => {
     const others = (e.goalIds || []).filter(id => id !== g.id).map(goalById).filter(Boolean);
     const confirming = pendingDel === e.id;
-    return swipeWrap(`<div class="row-line"><div class="row-main"><div class="row-title"><span class="num">${fmt(e.value)} ${esc(g.unit)}</span> <span class="muted">· ${fmtD(e.date)}</span></div>
+    return swipeWrap(`<div class="row-line"><div class="row-main" data-act="edit-log" data-id="${e.id}" role="button" tabindex="0"><div class="row-title"><span class="num">${fmt(e.value)} ${esc(g.unit)}</span> <span class="muted">· ${fmtD(e.date)}</span></div>
       ${e.note || others.length ? `<div class="row-sub">${esc(e.note || "")}${e.note && others.length ? " · " : ""}${others.length ? `also in ${esc(others.map(o => o.name).join(", "))}` : ""}</div>` : ""}</div>
       ${confirming ? `<div class="confirm">${others.length ? "Delete from all goals?" : "Delete?"}<button class="btn sm danger" data-act="del-log" data-id="${e.id}">Delete</button><button class="btn sm ghost" data-act="cancel-del">Keep</button></div>`
-        : `<button class="x-btn desk" data-act="ask-del-log" data-id="${e.id}" aria-label="Delete entry from ${fmtD(e.date)}">${IC.x}</button>`}</div>`, "entry", e.id, false);
+        : `<button class="x-btn desk" data-act="ask-del-log" data-id="${e.id}" aria-label="Delete entry from ${fmtD(e.date)}">${IC.x}</button>`}</div>`, "entry", e.id, "edit");
   }).join("");
   return `<div class="card flush" style="padding-top:14px"><div class="card-title">Entries</div><div>${rows}</div>
     ${logs.length > 6 ? `<button class="link" data-act="toggle-logs" style="margin-bottom:8px">${showAllLogs ? "Show fewer" : `Show all ${logs.length}`}</button>` : ""}</div>`;
@@ -1078,12 +1216,12 @@ function renderDock(){
       : `<button class="btn" data-act="new-goal">${IC.plus}New goal</button>`;
   } else {
     const g = goalById(view.id);
-    if (g && g.type !== "milestone") inner = `<button class="btn" data-act="open-log" data-id="${g.id}">${IC.plus}Add entry</button>`;
+    if (g && g.type === "number") inner = `<button class="btn" data-act="open-log" data-id="${g.id}">${IC.plus}Add entry</button>`;
   }
   d.hidden = !inner;
   d.innerHTML = inner ? `<div class="dock-inner">${inner}</div>` : "";
 }
-const loggable = () => S.goals.filter(g => !g.archived && g.type !== "milestone" && g.start <= todayKey());
+const loggable = () => S.goals.filter(g => !g.archived && g.type === "number" && g.start <= todayKey());
 
 /* ---------- Sheets ---------- */
 function openSheet(s){ sheet = s; renderSheet(); }
@@ -1092,11 +1230,12 @@ function renderSheet(){
   const root = $("#sheet-root");
   if (!sheet) { root.innerHTML = ""; return; }
   const prev = root.querySelector(".sheet-panel"), scroll = prev ? prev.scrollTop : 0;
-  const body = sheet.type === "log" ? sheetLog() : sheet.type === "goal" ? sheetGoal() : sheetSettings();
-  root.innerHTML = `<div class="scrim" data-act="close-sheet"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(sheet.type === "log" ? "Log progress" : sheet.type === "goal" ? "Goal" : "Settings")}"><div class="sheet-panel ${prev ? "no-anim" : ""}">${body}</div></div>`;
+  const body = {log:sheetLog, goal:sheetGoal, pause:sheetPause, review:sheetReview, history:sheetHistory}[sheet.type]?.() ?? sheetSettings();
+  root.innerHTML = `<div class="scrim" data-act="close-sheet"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc({log:"Log progress", goal:"Goal", pause:"Take a break", review:"Last week", history:"History"}[sheet.type] || "Settings")}"><div class="sheet-panel ${prev ? "no-anim" : ""}">${body}</div></div>`;
   if (prev) root.querySelector(".sheet-panel").scrollTop = scroll;
   if (sheet.type === "goal") updateGoalPreview();
   if (sheet.type === "log") updateLogPreview();
+  if (sheet.type === "pause") updatePausePreview();
   syncNav();
 }
 const closeX = `<button class="circle-btn" data-act="close-sheet" aria-label="Close">${IC.x}</button>`;
@@ -1117,8 +1256,9 @@ function sheetLog(){
   if (!sheet.also) sheet.also = {};
   const quick = g.count === "one" ? [] : QUICK[unitKey] || [];
   const yest = addDays(t, -1);
-  return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">Log progress</div>${closeX}</div>
-    ${goals.length > 1 ? `<div class="field"><span class="flabel">Goal</span><div class="chips" role="group" aria-label="Goal">${goals.map(o => `<button class="chip" data-act="log-goal" data-id="${o.id}" aria-pressed="${o.id === g.id}">${esc(o.name)}</button>`).join("")}</div></div>` : `<div class="sh-goal">${esc(g.name)}</div>`}
+  const ed = !!sheet.editId;
+  return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">${ed ? "Edit entry" : "Log progress"}</div>${closeX}</div>
+    ${goals.length > 1 && !ed ? `<div class="field"><span class="flabel">Goal</span><div class="chips" role="group" aria-label="Goal">${goals.map(o => `<button class="chip" data-act="log-goal" data-id="${o.id}" aria-pressed="${o.id === g.id}">${esc(o.name)}</button>`).join("")}</div></div>` : `<div class="sh-goal">${esc(g.name)}</div>`}
     <div class="field"><label for="lg-val">${g.count === "one" ? "Result" : "How much?"}</label>
       <div class="inline-unit"><input class="input big-in" id="lg-val" type="number" inputmode="decimal" min="0" step="any" value="${esc(sheet.val ?? "")}" placeholder="0"><span>${esc(g.unit)}</span></div>
       ${quick.length ? `<div class="chips">${quick.map(q => `<button class="chip" data-act="log-quick" data-v="${q}">${fmt(q)} ${esc(g.unit)}</button>`).join("")}</div>` : ""}</div>
@@ -1130,12 +1270,12 @@ function sheetLog(){
     ${others.length ? `<div class="field"><span class="flabel">Also count for</span><div class="checks">${others.map(o => `<label class="checkline"><input type="checkbox" data-also="${o.id}" ${sheet.also[o.id] !== false ? "checked" : ""}>${esc(o.name)}</label>`).join("")}</div></div>` : ""}
     <div class="preview" id="lg-pv"></div>
     <div class="err" id="lg-err" hidden></div>
-    <button class="btn" data-act="save-log">Save</button>`;
+    <button class="btn" data-act="save-log">Save</button>${ed ? `<button class="link danger" data-act="sw-del" data-kind="entry" data-id="${sheet.editId}">Delete entry</button>` : ""}`;
 }
 function updateLogPreview(){
   const pv = $("#lg-pv"); if (!pv || !sheet) return;
   const g = goalById(sheet.gid), v = parseFloat(sheet.val);
-  if (!g || !(v > 0)) { pv.hidden = true; return; }
+  if (!g || !(v > 0) || sheet.editId) { pv.hidden = true; return; }
   pv.hidden = false;
   const k = calc(g), u = esc(g.unit);
   const show = (main, sub, cls) => { pv.innerHTML = `<b>${main}</b>${sub ? `<span class="${cls || ""}">${sub}</span>` : ""}`; };
@@ -1166,14 +1306,17 @@ async function saveLog(){
   if (date > g.end) return fail(`This goal ended on ${fmtD(g.end)}.`);
   const ids = [g.id];
   document.querySelectorAll("[data-also]").forEach(cb => { const o = goalById(cb.dataset.also); if (cb.checked && o && date >= o.start && date <= o.end) ids.push(o.id); });
-  const e = {id:newId(), date, value:v, goalIds:ids, ts:Date.now()};
+  let old = null, changed = [];
+  if (sheet.editId) for (const [k2, m] of Object.entries(L)) { const i = m.entries.findIndex(x => x.id === sheet.editId); if (i >= 0) { old = m.entries.splice(i, 1)[0]; m.updatedAt = Date.now(); changed.push(k2); break; } }
+  const e = {id:old ? old.id : newId(), date, value:v, goalIds:ids, ts:old ? old.ts : Date.now()};
+  if (old && old.example) e.example = true;
   if (sheet.note && sheet.note.trim()) e.note = sheet.note.trim();
   const mk = monthOf(date);
   (L[mk] || (L[mk] = {month:mk, entries:[], updatedAt:0})).entries.push(e);
   L[mk].updatedAt = Date.now();
-  invalidate(); persist([mk]);
+  invalidate(); persist([...new Set([...changed, mk])]);
   closeSheet(); render();
-  toast(`Logged ${fmt(v)} ${g.unit}${ids.length > 1 ? ` for ${ids.length} goals` : ""}`);
+  toast(old ? "Entry updated" : `Logged ${fmt(v)} ${g.unit}${ids.length > 1 ? ` for ${ids.length} goals` : ""}`);
 }
 
 // Goal sheet (create / edit)
@@ -1181,17 +1324,19 @@ const num = v => (v === "" || v == null) ? NaN : Number(v);
 function blankDraft(kind){
   const t = todayKey();
   if (!kind) return {kind:null};
-  if (kind === "project") return {kind, name:"", start:t, steps:[{id:newId(), title:"", due:"", done:false}]};
-  const d = {kind, name:"", unit:"", start:t, entry:kind === "build" ? "best" : "sum", pick:"latest", scope:kind === "total" || kind === "value" ? "total" : "period",
+  if (kind === "project") return {kind, name:"", area:"", start:t, steps:[{id:newId(), title:"", due:"", done:false}], more:false};
+  if (kind === "group") return {kind, name:"", area:"", childIds:[], more:false};
+  const d = {kind, name:"", area:"", unit:"", start:t, entry:kind === "build" ? "best" : "sum", pick:"latest", scope:kind === "total" || kind === "value" ? "total" : "period",
     to:"", from:"", step:"", stepEvery:"week", calc:"end", rep:repNorm({u:"week"}), custom:false, endMode:"duration", durN:12, durU:"weeks", end:addDays(t, 83), more:false};
   fixDraftStep(d);
   return d;
 }
 function draftFromGoal(g){
   const kind = kindOf(g);
-  if (kind === "project") return {kind, name:g.name, start:g.start || todayKey(), steps:(g.steps || []).map(s => Object.assign({}, s))};
+  if (kind === "project") return {kind, name:g.name, area:g.area || "", start:g.start || todayKey(), steps:(g.steps || []).map(s => Object.assign({}, s)), more:false};
+  if (kind === "group") return {kind, name:g.name, area:g.area || "", childIds:(g.childIds || []).slice(), more:false};
   const d = blankDraft(kind);
-  Object.assign(d, {name:g.name, unit:g.unit, start:g.start, entry:g.count === "sum" ? "sum" : g.pick || "latest", pick:g.pick || "latest", scope:g.scope, to:g.to, from:g.from ?? "",
+  Object.assign(d, {name:g.name, area:g.area || "", pauses:clone(g.pauses || []), unit:g.unit, start:g.start, entry:g.count === "sum" ? "sum" : g.pick || "latest", pick:g.pick || "latest", scope:g.scope, to:g.to, from:g.from ?? "",
     step:g.step ?? "", stepEvery:g.stepEvery || "week", calc:"end", rep:repNorm(clone(g.rep)), endMode:"date", end:g.end, durN:"", durU:"weeks"});
   d.custom = presetOf(d.rep) === "custom";
   fixDraftStep(d);
@@ -1199,7 +1344,7 @@ function draftFromGoal(g){
 }
 function draftFromTemplate(t){
   const today = todayKey(), src = JSON.parse(JSON.stringify(t.d));
-  if (t.kind === "project") return {kind:"project", name:src.name, start:today, steps:(src.steps || []).map((title, i) => ({id:newId(), title, due:addDays(today, 14 * (i + 1)), done:false}))};
+  if (t.kind === "project") return {kind:"project", name:src.name, area:"", more:false, start:today, steps:(src.steps || []).map((title, i) => ({id:newId(), title, due:addDays(today, 14 * (i + 1)), done:false}))};
   const d = Object.assign(blankDraft(t.kind), src);
   d.rep = repNorm(src.rep);
   d.custom = presetOf(d.rep) === "custom";
@@ -1222,6 +1367,8 @@ function draftGoal(d){
   const m = draftModel(d), r = repNorm(d.rep), out = {ok:false}, fail = (why, warn) => Object.assign(out, {why, warn});
   const g = {type:"number", unit:(d.unit || "").trim(), start:d.start, count:m.count, scope:m.scope, rep:r};
   if (m.count === "one") g.pick = m.pick;
+  if ((d.area || "").trim()) g.area = d.area.trim();
+  if (d.pauses && d.pauses.length) g.pauses = clone(d.pauses);
   if (!d.start) return fail("Pick a start date.");
   if (r.u === "month" && r.mode === "dates" && !r.dates.length) return fail("Pick at least one day of the month.");
   const from = num(d.from), to = num(d.to);
@@ -1242,6 +1389,7 @@ function draftGoal(d){
       g.step = round2(step);
       g.end = endForSteps(g, Math.ceil(Math.abs(to - from) / Math.abs(step) - 1e-9));
       if (!g.end) return fail("At that pace it would take more than ten years.", true);
+      if (g.pauses) g.end = addDays(g.end, pausedIn(g, g.start, "9999-12-31"));
     } else {
       g.end = draftEnd(d);
       if (!g.end) return fail("Set how long it runs.");
@@ -1297,12 +1445,19 @@ function sheetGoal(){
   const numF = (id, key, label, ph) => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" data-f="${key}" type="number" inputmode="decimal" step="any" value="${esc(d[key])}" placeholder="${ph}"></div>`;
   const unitF = `<div class="field"><label for="g-unit">Unit</label><input class="input" id="g-unit" data-f="unit" list="unit-list" maxlength="14" value="${esc(d.unit)}" placeholder="${UNIT_PH[d.kind] || "km"}"><datalist id="unit-list">${UNITS.map(u => `<option value="${u}">`).join("")}</datalist></div>`;
   let more = "";
-  if (d.kind === "project") {
+  const areaList = [...new Set(S.goals.map(x => x.area).filter(Boolean))];
+  const areaF = `<div class="field"><label for="g-area">Area</label><input class="input" id="g-area" data-f="area" list="area-list" maxlength="24" value="${esc(d.area || "")}" placeholder="e.g. Health, Study, Work"><datalist id="area-list">${areaList.map(a => `<option value="${esc(a)}">`).join("")}</datalist></div>`;
+  const moreToggle = inner => d.more ? `<div class="more-box">${inner}</div><button class="link" data-act="g-more">Fewer options</button>` : `<button class="link" data-act="g-more">More options</button>`;
+  if (d.kind === "group") {
+    const opts = S.goals.filter(x => !x.archived && x.type !== "group");
+    f += opts.length ? `<div class="field"><span class="flabel">Goals to combine</span><div class="checks">${opts.map(x => `<label class="checkline"><input type="checkbox" data-child="${x.id}" ${d.childIds.includes(x.id) ? "checked" : ""}>${esc(x.name)}</label>`).join("")}</div></div>` : `<div class="note">Create the goals first, then combine them here.</div>`;
+    f += moreToggle(areaF);
+  } else if (d.kind === "project") {
     f += `<div class="field"><span class="flabel">Steps</span><div style="display:flex;flex-direction:column;gap:8px">${d.steps.map(s => `<div class="step-edit">
         <input class="input" data-step="${s.id}" data-sf="title" maxlength="80" value="${esc(s.title)}" placeholder="Step" aria-label="Step name">
         <input class="input" data-step="${s.id}" data-sf="due" type="date" value="${s.due || ""}" aria-label="Due date">
         <button class="x-btn" data-act="g-del-step" data-step="${s.id}" aria-label="Remove step">${IC.x}</button></div>`).join("")}</div>
-      <button class="link" data-act="g-add-step">Add a step</button></div>`;
+      <button class="link" data-act="g-add-step">Add a step</button></div>` + moreToggle(areaF);
   } else {
     const entrySeg = (label) => `<div class="field"><span class="flabel">${label}</span>${segBtns("g-seg", "entry", d.entry, [["sum", "Add them up"], ["best", "Best one"], ["latest", "Latest one"]])}</div>`;
     if (d.kind === "total") {
@@ -1323,8 +1478,8 @@ function sheetGoal(){
       f += `<div class="grid3">${numF("g-from", "from", "Now", "85")}${numF("g-to", "to", "Goal", "80")}${unitF}</div>` + lengthField(d, "By when") + periodField(d, "Plan per", {per:true});
       more = `<div class="field"><span class="flabel">Which entry counts</span>${segBtns("g-seg", "pick", d.pick, [["latest", "Latest one"], ["best", "Best one"]])}</div>`;
     }
-    more = `<div class="field"><label for="g-start">Start date</label><input class="input" id="g-start" data-f="start" type="date" value="${d.start}"></div>` + more;
-    f += d.more ? `<div class="more-box">${more}</div><button class="link" data-act="g-more">Fewer options</button>` : `<button class="link" data-act="g-more">More options</button>`;
+    more = areaF + `<div class="field"><label for="g-start">Start date</label><input class="input" id="g-start" data-f="start" type="date" value="${d.start}"></div>` + more;
+    f += moreToggle(more);
   }
   const danger = isNew ? "" : sheet.confirmDel
     ? `<div class="preview"><span class="warn">Delete this goal? Its entries stay in your history but won't show here any more.</span><div class="btn-row"><button class="btn sm danger" data-act="del-goal">Delete goal</button><button class="btn sm ghost" data-act="cancel-del-goal">Cancel</button></div></div>`
@@ -1338,6 +1493,11 @@ function sheetGoal(){
 function updateGoalPreview(){
   const pv = $("#g-pv"); if (!pv || !sheet || sheet.type !== "goal" || !sheet.draft.kind) return;
   const d = sheet.draft, lines = [];
+  if (d.kind === "group") {
+    const n = d.childIds.filter(goalById).length;
+    pv.innerHTML = n >= 2 ? `<b>${n} goals combined</b><span>Progress is the average of the goals in it.</span>` : `<span class="muted">Pick at least two goals.</span>`;
+    return;
+  }
   if (d.kind === "project") {
     const steps = d.steps.filter(s => s.title.trim());
     if (!steps.length) { pv.innerHTML = `<span class="muted">Add at least one step.</span>`; return; }
@@ -1379,11 +1539,18 @@ async function saveGoal(){
   const existing = sheet.id ? goalById(sheet.id) : null;
   const keep = existing ? {id:existing.id, createdAt:existing.createdAt, archived:!!existing.archived} : {id:newId(), createdAt:Date.now(), archived:false};
   let g;
-  if (d.kind === "project") {
+  if (d.kind === "group") {
+    const kids = d.childIds.map(goalById).filter(Boolean);
+    if (kids.length < 2) return fail("Pick at least two goals.");
+    const starts = kids.map(x => x.start).filter(Boolean).sort(), ends = kids.map(x => x.end).filter(Boolean).sort();
+    g = Object.assign(keep, {type:"group", name, childIds:kids.map(x => x.id), start:starts[0] || todayKey(), end:ends[ends.length - 1] || ""});
+    if ((d.area || "").trim()) g.area = d.area.trim();
+  } else if (d.kind === "project") {
     const steps = d.steps.filter(s => s.title.trim()).map(s => ({id:s.id, title:s.title.trim(), due:s.due || "", done:!!s.done, doneAt:s.doneAt || ""}));
     if (!steps.length) return fail("Add at least one step.");
     const dues = steps.map(s => s.due).filter(Boolean).sort();
     g = Object.assign(keep, {type:"milestone", name, unit:"", start:d.start || todayKey(), end:dues.length ? dues[dues.length - 1] : "", steps});
+    if ((d.area || "").trim()) g.area = d.area.trim();
   } else {
     if (!(d.unit || "").trim()) return fail("Add a unit, like km, kg or sessions.");
     const res = draftGoal(d);
@@ -1396,13 +1563,80 @@ async function saveGoal(){
   render(); window.scrollTo(0, 0);
   toast(existing ? "Saved" : "Goal created");
 }
+// Take a break
+function sheetPause(){
+  const g = goalById(sheet.gid);
+  if (!g) return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">Take a break</div>${closeX}</div>`;
+  return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">Take a break</div>${closeX}</div>
+    <p class="note">For holidays or being ill. Paused days don't count, and the plan moves back by the same number of days.</p>
+    <div class="grid2"><div class="field"><label for="ps-from">From</label><input class="input" id="ps-from" type="date" min="${g.start}" max="${g.end}" value="${sheet.from}"></div>
+      <div class="field"><label for="ps-days">Days</label><input class="input" id="ps-days" type="number" inputmode="numeric" min="1" max="365" step="1" value="${esc(sheet.days)}"></div></div>
+    <div class="preview" id="ps-pv"></div><div class="err" id="ps-err" hidden></div>
+    <button class="btn" data-act="save-pause">${sheet.from > todayKey() ? "Plan the break" : "Start the break"}</button>`;
+}
+function pauseDraft(){
+  const g = goalById(sheet.gid), n = Math.round(Number(sheet.days)), a = sheet.from;
+  if (!g || !(n >= 1) || !a) return {why:"Pick a start day and how many days."};
+  if (a < g.start || a > g.end) return {why:`Pick a day between ${fmtD(g.start)} and ${fmtD(g.end)}.`};
+  const b = addDays(a, n - 1);
+  if ((g.pauses || []).some(p => p.a <= b && a <= p.b)) return {why:"That overlaps a break you already have."};
+  return {g, a, b, n, end:addDays(g.end, n)};
+}
+function updatePausePreview(){
+  const pv = $("#ps-pv"); if (!pv) return;
+  const r = pauseDraft();
+  pv.innerHTML = r.why ? `<span class="muted">${esc(r.why)}</span>` : `<b>${fmtD(r.a)} – ${fmtD(r.b)}</b><span>The goal now ends on ${fmtDY(r.end)}.</span>`;
+}
+// Last week, goal by goal
+function sheetReview(){
+  const t = todayKey(), a = addDays(mondayOf(t), -7), b = addDays(a, 6);
+  const goals = S.goals.filter(g => !g.archived && g.type !== "group" && (g.start || "") <= b && (g.type === "milestone" || g.end >= a));
+  const rows = goals.map(g => {
+    const k = calc(g), u = esc(g.unit || "");
+    let main = "", cls = "muted", next = "";
+    if (g.type === "milestone") {
+      const n = (g.steps || []).filter(s => s.done && s.doneAt >= a && s.doneAt <= b).length;
+      main = n ? `${n} ${plural(n, "step")} done` : "No steps done"; cls = n ? "st-ahead" : "muted"; next = k.next ? `Next: ${esc(k.next.title)}` : "";
+    } else if (k.kind === "tsum") {
+      const done = sumIn(k.logs, a, b), plan = k.perW * (k.elapsed(b) - k.elapsed(addDays(a, -1)));
+      const ok = g.less ? done <= plan + 1e-9 : done >= plan - 1e-9;
+      main = `${fmt(done)} of ${fmt(round1(plan))} ${u}${g.less ? " allowed" : ""}`; cls = ok ? "st-ahead" : "st-behind";
+      if (!k.finished && !k.over && !k.ended) next = `This week: ${g.less ? "up to " : "about "}${fmt(round1(k.needOcc / typLen(k.r) * 7))} ${u}`;
+    } else if (k.kind === "tone") {
+      const upTo = d => { let v = null; for (const e of k.seq) if (e.date <= d) v = e.value; return v; };
+      const before = upTo(addDays(a, -1)) ?? g.from, after = upTo(b), ch = after == null ? null : round2(after - before);
+      main = ch == null ? "No entries" : `${fmtS(ch)} ${u}, now ${fmt(after)}`; cls = ch == null ? "muted" : (g.to - before) * ch > 0 ? "st-ahead" : ch === 0 ? "muted" : "st-behind";
+      next = `Goal: ${fmt(g.to)} ${u}`;
+    } else if (k.kind === "period") {
+      const ws = k.W.map((o, i) => [o, i]).filter(([o]) => o.b >= a && o.b <= b);
+      const hit = ws.filter(([, i]) => k.met(i)).length;
+      main = ws.length ? `Hit ${hit} of ${ws.length} ${ws.length === 1 ? k.O.one : k.O.many}` : "Nothing due"; cls = !ws.length ? "muted" : hit === ws.length ? "st-ahead" : "st-behind";
+      next = k.ended ? "" : esc(k.status);
+    }
+    return `<div class="row-line"><div class="row-main"><div class="row-title">${esc(g.name)}</div>${next ? `<div class="row-sub">${next}</div>` : ""}</div><div class="rv ${cls}">${main}</div></div>`;
+  });
+  return `<div class="grab"></div><div class="sheet-head"><div><div class="sh-title">Last week</div><div class="sh-sub">${fmtD(a)} – ${fmtD(b)}</div></div>${closeX}</div>
+    <div>${rows.join("") || `<div class="note">No goals were running last week.</div>`}</div>`;
+}
+// Finished goals and what you've logged overall
+function sheetHistory(){
+  const done = S.goals.filter(g => g.type !== "group").map(g => [g, calc(g)]).filter(([, k]) => k.finished || k.ended).sort((x, y) => (y[0].end || "").localeCompare(x[0].end || ""));
+  const hit = done.filter(([, k]) => k.finished).length, totals = {};
+  for (const e of allLogs()) { const g = (e.goalIds || []).map(goalById).find(x => x && x.count === "sum"); if (g) totals[g.unit] = (totals[g.unit] || 0) + e.value; }
+  const tot = Object.entries(totals).sort((x, y) => y[1] - x[1]).map(([u, v]) => `<div><div class="v">${fmt(round1(v))}</div><div class="s">${esc(u)}</div></div>`).join("");
+  return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">History</div>${closeX}</div>
+    <div class="stats3" style="border-top:0;padding-top:0">${stat("Reached", String(hit))}${stat("Not reached", String(done.length - hit))}${stat("Entries", String(allLogs().length))}</div>
+    ${tot ? `<div class="field"><span class="flabel">Logged so far</span><div class="totals">${tot}</div></div>` : ""}
+    <div class="field"><span class="flabel">Finished goals</span>${done.length ? `<div>${done.map(([g, k]) => `<div class="row-line"><div class="row-main"><div class="row-title">${esc(g.name)}</div><div class="row-sub">${g.end ? `Ended ${fmtDY(g.end)}` : ""}${g.archived ? " · archived" : ""}</div></div><div class="rv st-${k.st}">${esc(k.status)}</div></div>`).join("")}</div>` : `<div class="note">Nothing finished yet. Your finished goals will show up here.</div>`}</div>`;
+}
+
 // Settings
 function sheetSettings(){
-  const th = S.settings.theme === "dark" ? "dark" : "light";
+  const th = S.settings.theme;
   const archived = S.goals.filter(g => g.archived);
   return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">Settings</div>${closeX}</div>
     <div class="set-group"><div class="set-title">Theme</div>
-      <div class="seg"><button data-act="set-theme" data-v="light" aria-pressed="${th === "light"}">Light</button><button data-act="set-theme" data-v="dark" aria-pressed="${th === "dark"}">Dark</button></div></div>
+      <div class="seg"><button data-act="set-theme" data-v="light" aria-pressed="${th === "light"}">Light</button><button data-act="set-theme" data-v="dark" aria-pressed="${th === "dark"}">Dark</button><button data-act="set-theme" data-v="system" aria-pressed="${th === "system"}">Match phone</button></div></div>
     ${archived.length ? `<div class="set-group"><div class="set-title">Archived goals</div><div>${archived.map(g => `<div class="row-line"><div class="row-main"><div class="row-title">${esc(g.name)}</div></div><button class="btn sm ghost" data-act="restore-goal" data-id="${g.id}">Restore</button></div>`).join("")}</div></div>` : ""}
     <div class="set-group"><div class="set-title">Your data</div>
       <div class="note">${!IN_CLAUDE ? "Your goals are saved on this phone only. Export a backup now and then, for example to Google Drive." : mode === "cloud" ? "Your goals are saved to your Claude account and sync across your devices." : "Your goals are saved on this device only. Open Headway while signed in to claude.ai to sync them."}</div>
@@ -1580,7 +1814,7 @@ const H = {
       for (const [k, m] of Object.entries(L)) {
         const i = m.entries.findIndex(e => e.id === t.dataset.id);
         if (i < 0) continue;
-        const [e] = m.entries.splice(i, 1); m.updatedAt = Date.now(); invalidate(); persist([k]); render();
+        const [e] = m.entries.splice(i, 1); m.updatedAt = Date.now(); invalidate(); persist([k]); if (sheet && sheet.editId === e.id) closeSheet(); render();
         const n = (e.goalIds || []).filter(goalById).length;
         toast(n > 1 ? `Entry deleted from ${n} goals` : "Entry deleted", () => { m.entries.push(e); m.updatedAt = Date.now(); invalidate(); persist([k]); render(); });
         break;
@@ -1588,6 +1822,40 @@ const H = {
     }
   },
   "undo": () => { const f = undoFn; undoFn = null; $("#toast-root").innerHTML = ""; if (f) f(); },
+  "edit-log": t => {
+    const e = allLogs().find(x => x.id === t.dataset.id); if (!e) return;
+    const gid = view.name === "goal" && (e.goalIds || []).includes(view.id) ? view.id : (e.goalIds || []).find(goalById);
+    if (!gid) return;
+    openSheet({type:"log", editId:e.id, gid, val:String(e.value), date:e.date, note:e.note || "", also:Object.fromEntries(loggable().map(o => [o.id, (e.goalIds || []).includes(o.id)]))});
+  },
+  "quick-add": t => {
+    const g = goalById(t.dataset.id); if (!g) return;
+    const d = todayKey(), mk = monthOf(d), e = {id:newId(), date:d, value:1, goalIds:[g.id], ts:Date.now()};
+    (L[mk] || (L[mk] = {month:mk, entries:[], updatedAt:0})).entries.push(e); L[mk].updatedAt = Date.now();
+    invalidate(); persist([mk]); render();
+    if (navigator.vibrate) try { navigator.vibrate(8); } catch (er) {}
+    toast(`Logged 1 ${uN(1, g.unit)}`, () => { const m = L[mk], i = m.entries.indexOf(e); if (i >= 0) m.entries.splice(i, 1); m.updatedAt = Date.now(); invalidate(); persist([mk]); render(); });
+  },
+  "area-filter": t => { areaFilter = t.dataset.v; try { localStorage.setItem("headway.area", areaFilter); } catch (e) {} render(); },
+  "open-review": () => openSheet({type:"review"}),
+  "open-history": () => openSheet({type:"history"}),
+  "open-pause": t => openSheet({type:"pause", gid:t.dataset.id, from:todayKey() < goalById(t.dataset.id).start ? goalById(t.dataset.id).start : todayKey(), days:"7"}),
+  "save-pause": () => {
+    const r = pauseDraft(), err = $("#ps-err");
+    if (r.why) { err.textContent = r.why; err.hidden = false; return; }
+    r.g.pauses = [...(r.g.pauses || []), {a:r.a, b:r.b}].sort((x, y) => x.a.localeCompare(y.a)); r.g.end = r.end;
+    persist(); closeSheet(); render(); toast(r.a > todayKey() ? "Break planned" : "Break started");
+  },
+  "resume-pause": t => {
+    const g = goalById(t.dataset.id), p = g && g.pauses[+t.dataset.v]; if (!p) return;
+    const y = addDays(todayKey(), -1), cut = p.a > y ? diffDays(p.a, p.b) + 1 : diffDays(y, p.b);
+    if (p.a > y) g.pauses.splice(+t.dataset.v, 1); else p.b = y;
+    g.end = addDays(g.end, -cut); persist(); render(); toast("Welcome back");
+  },
+  "cancel-pause": t => {
+    const g = goalById(t.dataset.id), p = g && g.pauses[+t.dataset.v]; if (!p) return;
+    g.pauses.splice(+t.dataset.v, 1); g.end = addDays(g.end, -(diffDays(p.a, p.b) + 1)); persist(); render(); toast("Break cancelled");
+  },
   "toggle-logs": () => { showAllLogs = !showAllLogs; render(); },
   "toggle-step": t => { const g = goalById(t.dataset.id), s = g && g.steps.find(x => x.id === t.dataset.step); if (!s) return; s.done = !s.done; s.doneAt = s.done ? todayKey() : ""; persist(); render(); if (s.done && g.steps.every(x => x.done)) toast(`${g.name}: all steps done`); },
   "add-step": t => {
@@ -1600,7 +1868,7 @@ const H = {
   "sug-extend": t => { const g = goalById(t.dataset.id); if (!g) return; g.end = addDays(g.end, Number(t.dataset.v)); persist(); render(); toast(`New end date: ${fmtDY(g.end)}`); },
   "sug-shift": t => { const g = goalById(t.dataset.id); if (!g) return; const w = Number(t.dataset.v); if (!shiftPlan(g, w)) return; persist(); render(); toast(w < 0 ? "Plan moved forward" : "Plan pushed back"); },
   "sug-due": t => { const g = goalById(t.dataset.id), s = g && g.steps.find(x => x.id === t.dataset.v); if (!s) return; s.due = addDays(todayKey(), 7); persist(); render(); toast(`Moved to ${fmtD(s.due)}`); },
-  "set-theme": t => { S.settings.theme = t.dataset.v === "dark" ? "dark" : "light"; persist(); render(); renderSheet(); },
+  "set-theme": t => { S.settings.theme = ["dark", "system"].includes(t.dataset.v) ? t.dataset.v : "light"; persist(); render(); renderSheet(); },
   "load-examples": () => { loadExamples(); closeSheet(); view = {name:"home"}; render(); toast("Example goals added"); },
   "clear-examples": () => { clearExamples(); closeSheet(); view = {name:"home"}; render(); toast("Examples cleared"); },
   "remove-old": () => removeOldData(),
@@ -1624,12 +1892,16 @@ document.addEventListener("input", e => {
   if (sheet.type === "goal") {
     if (el.dataset.f) { sheet.draft[el.dataset.f] = el.value; if (el.dataset.f === "start" || el.dataset.f === "durU") { renderSheet(); return; } updateGoalPreview(); }
     else if (el.dataset.rf) { sheet.draft.rep[el.dataset.rf] = el.value; updateGoalPreview(); }
+    else if (el.dataset.child) { const d = sheet.draft, id = el.dataset.child; d.childIds = el.checked ? [...new Set([...d.childIds, id])] : d.childIds.filter(x => x !== id); updateGoalPreview(); }
     else if (el.dataset.step) { const s = sheet.draft.steps.find(x => x.id === el.dataset.step); if (s) s[el.dataset.sf] = el.value; updateGoalPreview(); }
   } else if (sheet.type === "log") {
     if (el.id === "lg-val") { sheet.val = el.value; updateLogPreview(); }
     else if (el.id === "lg-note") sheet.note = el.value;
     else if (el.id === "lg-date") { if (el.value) { sheet.date = el.value; renderSheet(); } }
     else if (el.dataset.also) sheet.also[el.dataset.also] = el.checked;
+  } else if (sheet.type === "pause") {
+    if (el.id === "ps-from") sheet.from = el.value; else if (el.id === "ps-days") sheet.days = el.value;
+    updatePausePreview();
   }
 });
 document.addEventListener("change", e => {
@@ -1668,12 +1940,14 @@ document.addEventListener("pointermove", e => {
     return;
   }
   if (!sw) return;
+  if (lp && lp.lifted) { setX(sw.fg, 0); sw = null; return; }
   const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
   if (sw.mode === "?") {
     if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { sw.mode = "h"; try { sw.el.setPointerCapture(sw.pid); } catch (er) {} if (openSw && openSw !== sw.el) closeOpenSw(); }
     else if (Math.abs(dy) > 8) { sw = null; return; }
   }
   if (sw.mode !== "h") return;
+  if (lp && lp.lifted) return;
   let x = sw.base + dx;
   if (!sw.arch && x < 0) x = 0;
   const lim = ACT_W * 1.4;
@@ -1702,6 +1976,52 @@ function endGesture(){
 }
 document.addEventListener("pointerup", endGesture);
 document.addEventListener("pointercancel", endGesture);
+// Overview rows: hold to log to that goal; hold and drag to move it up or down
+let lp = null;
+document.addEventListener("touchstart", e => {
+  const el = e.target.closest(".goal-list > .swipe");
+  if (!el || e.touches.length > 1 || e.target.closest(".quick-add, .swipe-act") || openSw) return;
+  const t0 = e.touches[0], wrap = e.target.closest(".gr-wrap");
+  lp = {el, gid:wrap ? wrap.dataset.id : el.dataset.id, x0:t0.clientX, y0:t0.clientY, dy:0, lifted:false, timer:setTimeout(liftRow, 450)};
+}, {passive:true});
+function liftRow(){
+  if (!lp || (sw && sw.mode === "h")) { lp = null; return; }
+  if (sw) { setX(sw.fg, 0); sw = null; }
+  lp.lifted = true; swallowClick = true;
+  lp.items = [...lp.el.parentNode.children].filter(c => c.classList.contains("swipe"));
+  lp.rects = lp.items.map(c => c.getBoundingClientRect()); lp.from = lp.to = lp.items.indexOf(lp.el); lp.h = lp.rects[lp.from].height;
+  lp.el.classList.add("lifted");
+  if (navigator.vibrate) try { navigator.vibrate(12); } catch (er) {}
+}
+document.addEventListener("touchmove", e => {
+  if (!lp) return;
+  const t0 = e.touches[0], dx = t0.clientX - lp.x0, dy = t0.clientY - lp.y0;
+  if (!lp.lifted) { if (Math.hypot(dx, dy) > 8) { clearTimeout(lp.timer); lp = null; } return; }
+  e.preventDefault();
+  lp.dy = dy; lp.el.style.transform = `translateY(${dy}px)`;
+  const mid = lp.rects[lp.from].top + lp.h / 2 + dy;
+  let to = 0; lp.items.forEach((it, i) => { if (i !== lp.from && mid > lp.rects[i].top + lp.rects[i].height / 2) to++; });
+  lp.to = to;
+  lp.items.forEach((it, i) => { if (i === lp.from) return; const sh = lp.from < to && i > lp.from && i <= to ? -lp.h : lp.from > to && i >= to && i < lp.from ? lp.h : 0; it.style.transform = sh ? `translateY(${sh}px)` : ""; });
+}, {passive:false});
+function endLift(){
+  if (!lp) return;
+  const l = lp; lp = null; clearTimeout(l.timer);
+  if (!l.lifted) return;
+  l.items.forEach(it => { it.style.transform = ""; }); l.el.classList.remove("lifted");
+  if (Math.abs(l.dy) < 6) { const g = goalById(l.gid); if (g && loggable().includes(g)) openSheet({type:"log", gid:g.id, also:{}}); return; }
+  if (l.to !== l.from) {
+    const ids = l.items.map(it => it.dataset.id), [mv] = ids.splice(l.from, 1); ids.splice(l.to, 0, mv);
+    const slots = ids.map(id => S.goals.findIndex(g => g.id === id)).sort((x, y) => x - y), moved = ids.map(goalById);
+    slots.forEach((slot, i) => { S.goals[slot] = moved[i]; });
+    persist();
+  }
+  render();
+}
+document.addEventListener("touchend", endLift);
+document.addEventListener("touchcancel", endLift);
+document.addEventListener("contextmenu", e => { if (e.target.closest(".swipe")) e.preventDefault(); });
+if (window.matchMedia) try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (S && S.settings.theme === "system") applyTheme(); }); } catch (e) {}
 // in-app back: close the sheet, otherwise leave the goal page
 function inAppBack(){
   if (sheet) { closeSheet(); return true; }
