@@ -160,6 +160,50 @@ h1,h2,h3,h4,p{margin:0}
 .mbar i{display:block;height:100%;background:var(--accent)}
 .mbar i.over{background:var(--behind)}
 .sheet-panel.no-anim{animation:none}
+.meter{display:flex;flex-direction:column;gap:8px}
+.m-head{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}
+.m-head b{font-weight:500;font-size:17px}
+.m-track{position:relative;height:16px}
+.m-track>i{position:absolute;top:0;bottom:0;border-radius:4px}
+.m-track .plan{background:var(--accent-soft)}
+.m-track .fill{background:var(--accent)}
+.m-track .over{background:var(--behind)}
+.m-track .debt,.m-track .taken{background:repeating-linear-gradient(135deg,var(--behind-soft) 0 4px,transparent 4px 8px);box-shadow:inset 0 0 0 1.5px var(--behind-soft)}
+.m-track .saved,.m-track .covered{background:repeating-linear-gradient(135deg,var(--accent-soft) 0 4px,transparent 4px 8px);box-shadow:inset 0 0 0 1.5px var(--accent-soft)}
+.m-track .proj{top:4px;bottom:4px;background:repeating-linear-gradient(135deg,var(--accent) 0 3px,transparent 3px 6px);opacity:.7}
+.m-track .proj.bad{background:repeating-linear-gradient(135deg,var(--behind) 0 3px,transparent 3px 6px)}
+.m-track .m-tick{width:2px;top:-4px;bottom:-4px;margin-left:-1px;background:var(--ink);border-radius:1px}
+.legend b{font-weight:500;color:var(--ink)}
+.legend i.mk{width:12px;height:10px;border:0;border-radius:3px}
+.legend i.mk.fill{background:var(--accent)} .legend i.mk.plan{background:var(--accent-soft)} .legend i.mk.over{background:var(--behind)}
+.legend i.mk.debt,.legend i.mk.taken{background:repeating-linear-gradient(135deg,var(--behind-soft) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1.5px var(--behind-soft)}
+.legend i.mk.saved,.legend i.mk.covered{background:repeating-linear-gradient(135deg,var(--accent-soft) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1.5px var(--accent-soft)}
+.fc-viz{display:flex;flex-direction:column;gap:6px}
+.fc-row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.fc-row b{color:var(--ink);font-weight:500}
+.fc-svg{display:block;width:100%;height:auto;margin-top:-2px}
+.strip{display:inline-flex;gap:3px;align-items:center;flex-wrap:wrap}
+.strip i{width:9px;height:9px;border-radius:2px;background:var(--track)}
+.strip i.on{background:var(--accent)} .strip i.off{background:var(--behind)} .strip i.past{background:var(--accent-soft)}
+.strip i.cur{background:none;box-shadow:inset 0 0 0 1.5px var(--ink)}
+.stats3 .s .strip{margin-top:4px}
+.gr-meta{display:inline-flex;align-items:center;gap:8px}
+.mini{position:relative;display:block;width:72px;height:8px;border-radius:4px;background:var(--track)}
+.mini i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--ink)}
+.mini i.ok{background:var(--accent)} .mini i.bad{background:var(--behind)}
+.mini b{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink);border-radius:1px}
+.spark{width:64px;height:20px;display:block}
+.rv-row .rv{white-space:nowrap}
+.rv-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
+.rv-row:last-child{border-bottom:0}
+.rv-row .rv{max-width:none}
+.rv-viz{display:flex;justify-content:flex-end;max-width:110px}
+.segbar{display:flex;gap:2px;height:10px}
+.segbar i{border-radius:3px;background:var(--track)}
+.segbar i.on{background:var(--accent)} .segbar i.off{background:var(--behind)} .segbar i.done{background:var(--ink)}
+.segbar.thin{height:4px;flex-basis:100%;margin-top:0}
+.summary .segbar{flex-direction:row;gap:2px}
+.summary{flex-wrap:wrap;row-gap:12px}
 .bacc{position:absolute;left:-2px;right:-2px;height:0;border-top:2px solid var(--accent);border-radius:1px}
 .legend i.acc{border-top:2px solid var(--accent);width:12px}
 .carry-note{font-size:14px;color:var(--muted);margin-top:-6px}
@@ -687,11 +731,15 @@ function calcTotalSum(g, k){
   const eNow = !started ? 0 : elapsed(ended ? g.end : addDays(t, -1));   // days that are over; today only counts once it's done
   const pace = perW * eNow, done = round2(k.logs.reduce((s, e) => s + e.value, 0));
   const dropped = droppedBy(g, "9999-12-31"), eff = round2(less ? done - dropped : done + dropped);   // let-go amounts count as done (or as forgiven, for limits)
-  const margin = less ? pace - eff : eff - pace;           // > 0 is good either way
+  // judged per period, so making up last week plus doing this week's plan is "on track", not "ahead":
+  // ahead only past the end of this period's plan, behind only below the periods that are already over
+  const plans = W.map(o => perW * o.len), planPast = W.reduce((a, o, i) => a + (o.b < t ? plans[i] : 0), 0);
+  const planNow = planPast + (k.curI >= 0 ? plans[k.curI] : 0);
+  const margin = less ? planNow - eff : eff > planNow ? eff - planNow : eff < planPast ? eff - planPast : 0;   // > 0 is good either way
   const remW = Math.max(0, Wt - (started ? elapsed(addDays(t, -1)) : 0)), tl = typLen(k.r);
   const perOcc = perW * tl, needOcc = remW > 0 ? Math.max(0, target - eff) / remW * tl : 0;
   const over = less && eff > target + 1e-9, finished = less ? ended && !over : eff >= target - 1e-9;
-  const plans = W.map(o => perW * o.len), focusI = k.curI >= 0 ? k.curI : k.nextI >= 0 ? k.nextI : W.length - 1;
+  const focusI = k.curI >= 0 ? k.curI : k.nextI >= 0 ? k.nextI : W.length - 1;
   const ct = carryOn(g) ? carryTargets(g, W, plans, k.res, focusI) : {eff:plans, car:plans.map(() => 0)};
   const tgt = i => i <= focusI ? ct.eff[i] : plans[i];
   const thr = Math.max(perW * 0.5, COUNTABLE.includes((u || "").toLowerCase()) ? 0.5 : 0);
@@ -701,8 +749,9 @@ function calcTotalSum(g, k){
     if (over) { status = `${amt(eff - target)} over the limit`; st = "behind"; }
     else if (!started) { status = `Starts ${fmtD(g.start)}`; st = "neutral"; }
     else if (ended) { status = "Stayed under the limit"; st = "done"; }
-    else if (margin >= thr) { status = `${amt(margin)} to spare`; st = "ahead"; }
     else if (margin <= -thr) { status = `${amt(-margin)} over budget`; st = "behind"; }
+    else if (k.curI >= 0 && margin >= thr) { status = `${amt(margin)} left ${k.O.now}`; st = "ahead"; }
+    else if (margin >= thr) { status = `${amt(margin)} to spare`; st = "ahead"; }
     else { status = "On budget"; st = "ahead"; }
   } else {
     if (finished) { status = "Done"; st = "done"; }
@@ -710,9 +759,11 @@ function calcTotalSum(g, k){
     else if (ended) { status = `Ended at ${Math.round(eff / target * 100)}%`; st = "neutral"; }
     else if (margin >= thr) { status = `${amt(margin)} ahead`; st = "ahead"; }
     else if (margin <= -thr) { status = `${amt(-margin)} behind`; st = "behind"; }
+    else if (k.curI >= 0 && planNow - eff > 1e-9) { status = `${amt(planNow - eff)} to go ${k.O.now}`; st = "ahead"; }
+    else if (k.curI >= 0) { status = `Done ${k.O.now}`; st = "ahead"; }
     else { status = "On track"; st = "ahead"; }
   }
-  return Object.assign(k, {kind:"tsum", target, Wt, perW, elapsed, pace, done, dropped, eff, margin, perOcc, needOcc, over, finished, thr, st, status,
+  return Object.assign(k, {kind:"tsum", planPast, planNow, target, Wt, perW, elapsed, pace, done, dropped, eff, margin, perOcc, needOcc, over, finished, thr, st, status,
     plans, tgt, focusI, carry:ct.car[focusI] || 0, carryOn:carryOn(g), bufUnit:isSession(k.r) ? "session" : "day",
     pct:clamp(eff / target, 0, 1), pacePct:started && !ended && !finished ? eNow / Wt : null,
     valText:fmt(done), ofText:` / ${fmt(target)} ${u}`, kindText:timeLeft(g, k)});
@@ -882,11 +933,11 @@ function forecast(g, k){
     const rate = k.done / soFar, left = diffDays(t, g.end);
     if (g.less) {
       const proj = round1(k.done + rate * left), ok = proj <= g.to + 1e-9;
-      return {text:ok ? `At this pace you'll end at about ${fmt(proj)} of ${fmt(g.to)} ${g.unit}.` : `At this pace you'll go over, to about ${fmt(proj)} of ${fmt(g.to)} ${g.unit}.`, cls:ok ? "st-ahead" : "st-behind", line:[k.dayN, k.done, k.days, proj]};
+      return {text:ok ? `At this pace you'll end at about ${fmt(proj)} of ${fmt(g.to)} ${g.unit}.` : `At this pace you'll go over, to about ${fmt(proj)} of ${fmt(g.to)} ${g.unit}.`, cls:ok ? "st-ahead" : "st-behind", line:[k.dayN, k.done, k.days, proj], proj, ok};
     }
     const need = Math.ceil((g.to - k.done) / rate - 1e-9), date = addDays(t, need), early = diffDays(date, g.end);
     const d1 = Math.min(k.days, k.dayN + need);
-    return {text:when(date, early, "finish"), cls:early >= 0 ? "st-ahead" : "st-behind", line:[k.dayN, k.done, d1, Math.min(g.to, k.done + rate * (d1 - k.dayN))]};
+    return {text:when(date, early, "finish"), cls:early >= 0 ? "st-ahead" : "st-behind", line:[k.dayN, k.done, d1, Math.min(g.to, k.done + rate * (d1 - k.dayN))], date, early};
   }
   if (k.kind === "tone" && k.cur != null) {
     const pts = k.seq.filter(e => diffDays(e.date, t) <= 42);
@@ -898,12 +949,78 @@ function forecast(g, k){
     if (!((k.to - k.cur) * slope > 0)) return {text:"Your entries aren't moving toward the goal yet.", cls:"st-behind", line:null};
     const need = Math.ceil((k.to - k.cur) / slope - 1e-9), date = addDays(pts[n - 1].date, need), early = diffDays(date, g.end);
     const d1 = Math.min(k.days, lastX + need);
-    return {text:when(date, early, `reach ${fmt(k.to)} ${g.unit}`), cls:early >= 0 ? "st-ahead" : "st-behind", line:[lastX, k.cur, d1, k.cur + slope * (d1 - lastX)]};
+    return {text:when(date, early, `reach ${fmt(k.to)} ${g.unit}`), cls:early >= 0 ? "st-ahead" : "st-behind", line:[lastX, k.cur, d1, k.cur + slope * (d1 - lastX)], date, early};
   }
   return null;
 }
 const projLine = (k, x, y) => k.fc && k.fc.line ? `<line x1="${x(k.fc.line[0]).toFixed(1)}" y1="${y(k.fc.line[1]).toFixed(1)}" x2="${x(k.fc.line[2]).toFixed(1)}" y2="${y(k.fc.line[3]).toFixed(1)}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>` : "";
 const fcLine = k => k.fc ? `<div class="forecast ${k.fc.cls}">${esc(k.fc.text)}</div>` : "";
+// forecast as a picture: a date line from start to end with the expected finish on it,
+// or (for limits) a bar of the limit with what's used now and what you'd use at this pace
+function fcViz(g, k){
+  const f = k.fc;
+  if (!f) return "";
+  if (f.proj != null) {
+    const S = Math.max(g.to, f.proj, k.done) || 1, pc = v => (clamp(v / S, 0, 1) * 100).toFixed(2);
+    const used = Math.min(k.done, g.to), lim = pc(g.to);
+    return `<div class="fc-viz" role="img" aria-label="${esc(f.text)}">
+      <div class="m-track">
+        <i class="plan" style="left:0;width:${lim}%"></i>
+        <i class="${f.ok ? "proj" : "proj bad"}" style="left:${pc(used)}%;width:${(pc(f.proj) - pc(used)).toFixed(2)}%"></i>
+        <i class="fill" style="left:0;width:${pc(used)}%"></i>
+        <i class="m-tick" style="left:${lim}%"></i>
+      </div>
+      <div class="fc-row"><span>Now <b>${fmt(round1(k.done))}</b></span><span class="${f.ok ? "" : "st-behind"}">At this pace <b>${fmt(round1(f.proj))}</b></span><span>Limit <b>${fmt(g.to)}</b></span></div></div>`;
+  }
+  if (!f.date) return `<div class="forecast ${f.cls}">${esc(f.text)}</div>`;
+  const t = todayKey(), a = g.start, b = f.date > g.end ? f.date : g.end, span = Math.max(1, diffDays(a, b));
+  const W = 342, x0 = 6, x1 = W - 6, x = d => x0 + diffDays(a, d) / span * (x1 - x0);
+  const xe = x(g.end), xf = x(f.date), xt = x(t), early = f.early >= 0;
+  const lo = Math.min(xe, xf), hi = Math.max(xe, xf);
+  const fLab = `${fmtD(f.date)}`, eLab = `End ${fmtD(g.end)}`;
+  const anchor = xx => xx < 40 ? "start" : xx > W - 40 ? "end" : "middle";
+  return `<svg class="fc-svg" viewBox="0 0 ${W} 58" role="img" aria-label="${esc(f.text)}">
+    <line x1="${x0}" y1="30" x2="${x1}" y2="30" stroke="var(--track)" stroke-width="6" stroke-linecap="round"/>
+    <line x1="${x0}" y1="30" x2="${xt.toFixed(1)}" y2="30" stroke="var(--ghost)" stroke-width="6" stroke-linecap="round"/>
+    ${hi - lo > 1 ? `<line x1="${lo.toFixed(1)}" y1="30" x2="${hi.toFixed(1)}" y2="30" stroke="${early ? "var(--accent-soft)" : "var(--behind-soft)"}" stroke-width="6"/>` : ""}
+    <line x1="${xe.toFixed(1)}" y1="21" x2="${xe.toFixed(1)}" y2="39" stroke="var(--ink)" stroke-width="1.5"/>
+    <text x="${xe.toFixed(1)}" y="53" text-anchor="${anchor(xe)}" font-size="11" fill="var(--muted)">${eLab}</text>
+    <circle cx="${xf.toFixed(1)}" cy="30" r="6" fill="${early ? "var(--accent)" : "var(--behind)"}" stroke="var(--card)" stroke-width="2"/>
+    <text x="${xf.toFixed(1)}" y="13" text-anchor="${anchor(xf)}" font-size="11" font-weight="500" fill="var(--ink)">${f.early === 0 ? "On time" : `${fLab} · ${Math.abs(f.early)} ${plural(Math.abs(f.early), "day")} ${early ? "early" : "late"}`}</text>
+  </svg>`;
+}
+// this period at a glance: the target as a bar (own target + carried-over part), filled with what's done
+function weekMeter(g, m){
+  const less = g.less, u = esc(g.unit), c = round2(m.carry || 0), eff = Math.max(0, round2(m.base + c)), done = m.done || 0;
+  const S = Math.max(m.base, eff, done) || 1, pc = v => clamp(v / S * 100, 0, 100);
+  const lo = Math.min(m.base, eff), hi = Math.max(m.base, eff), hasX = hi - lo > 0.05;
+  const xCls = !hasX ? "" : eff > m.base ? (less ? "saved" : "debt") : (less ? "taken" : "covered");
+  const xLab = {saved:"Saved", debt:"Carried over", taken:"Over earlier", covered:"Done ahead"}[xCls];
+  const fillTo = less ? Math.min(done, eff) : Math.min(done, S), over = less && done > eff ? done - eff : 0;
+  const okNow = less ? done <= eff + 1e-9 : done >= eff - 1e-9;
+  const seg = (cls, a, b) => b - a > 0.0001 ? `<i class="${cls}" style="left:calc(${pc(a).toFixed(2)}% + ${a > 0 ? 1 : 0}px);width:calc(${(pc(b) - pc(a)).toFixed(2)}% - ${a > 0 ? 1 : 0}px)"></i>` : "";
+  const label = `${fmt(round1(done))} of ${fmt(round1(eff))} ${g.unit}${less ? " allowed" : ""}${hasX ? `: ${carryNote(g, m.base, c)}` : ""}`;
+  return `<div class="meter" role="img" aria-label="${esc(label)}">
+    ${m.title ? `<div class="m-head"><span>${m.title}</span><span><b>${fmt(round1(done))}</b> / ${fmt(round1(eff))} ${u}${okNow && !less && done > 0 ? ` <span class="st-ahead">✓</span>` : ""}</span></div>` : ""}
+    <div class="m-track">${seg("plan", 0, lo)}${hasX ? seg(xCls, lo, hi) : ""}${seg("fill", 0, fillTo)}${over ? seg("over", eff, eff + over) : ""}${hasX ? `<i class="m-tick" style="left:${pc(m.base).toFixed(2)}%"></i>` : ""}</div>
+    ${legend([["mk fill", `${less ? "Used" : "Done"} <b>${fmt(round1(done))}</b>`], ["mk plan", `${less ? "Allowed" : "Planned"} <b>${fmt(round1(m.base))}</b>`], ...(hasX ? [[`mk ${xCls}`, `${xLab} <b>${fmt(round1(Math.abs(c)))}</b>`]] : []), ...(over ? [["mk over", `Over <b>${fmt(round1(over))}</b>`]] : [])])}
+  </div>`;
+}
+// one square per period so far: blue = on target, amber = missed, outline = this one
+function hitStrip(g, k, maxN){
+  const last = k.curI >= 0 ? k.curI : k.lastPast;
+  if (last < 0) return "";
+  let h = "";
+  for (let i = Math.max(0, last - maxN + 1); i <= last; i++) {
+    const cur = i === k.curI, ok = k.met(i), cls = cur ? (ok && !g.less ? "on" : "cur") : ok ? "on" : "off";
+    h += `<i class="${cls}"></i>`;
+  }
+  return `<span class="strip" role="img" aria-label="${k.metPast} of ${k.lastPast + 1} ${k.O.many} on target">${h}</span>`;
+}
+const miniBar = (v, target, less) => {
+  const S = Math.max(v, target) || 1, ok = less ? v <= target + 1e-9 : v >= target - 1e-9;
+  return `<span class="mini"><i class="${ok ? "ok" : less ? "bad" : ""}" style="width:${(clamp(v / S, 0, 1) * 100).toFixed(1)}%"></i><b style="left:${(clamp(target / S, 0, 1) * 100).toFixed(1)}%"></b></span>`;
+};
 
 /* ---------- Charts ---------- */
 const CH = {W:342, H:184, x0:32, x1:336, yT:12, yB:156};
@@ -1026,6 +1143,7 @@ const spanText = o => o.a === o.b ? `${WD[wdOf(o.a)]} ${fmtD(o.a)}` : `${fmtD(o.
 
 /* ---------- Views ---------- */
 const legend = items => `<div class="legend">${items.map(([c, l]) => `<span><i class="${c}"></i>${l}</span>`).join("")}</div>`;
+const statRaw = (l, v, subHtml) => `<div><div class="l">${l}</div><div class="v">${v}</div><div class="s">${subHtml}</div></div>`;
 const stat = (l, v, sub = "") => `<div><div class="l">${l}</div><div class="v">${v}</div>${sub ? `<div class="s">${esc(sub)}</div>` : ""}</div>`;
 const side = (v, l, cls = "") => `<div class="side-v ${cls}">${v}</div>${l ? `<div class="side-l">${l}</div>` : ""}`;
 function applyTheme(){
@@ -1068,7 +1186,7 @@ function goalRow(g, child){
   return `<div class="gr-wrap" data-id="${g.id}"><button class="goal-row ${q ? "q" : ""} ${child ? "child" : ""}" data-act="open-goal" data-id="${g.id}">
     <span class="gr-top"><span class="gr-name">${esc(g.name)}</span><span class="gr-val">${esc(k.valText)}<span>${esc(k.ofText)}</span></span></span>
     ${bar(g, k)}
-    <span class="gr-bot"><span class="muted">${esc(k.kindText)}</span><span class="st-${k.st}">${esc(k.status)}</span></span>
+    <span class="gr-bot">${k.kind === "period" && k.started && !k.ended && k.n ? `<span class="gr-meta">${hitStrip(g, k, 10)}<span class="muted">${k.focusI + 1}/${k.n}</span></span>` : `<span class="muted">${esc(k.kindText)}</span>`}<span class="st-${k.st}">${esc(k.status)}</span></span>
   </button>${q ? `<button class="quick-add" data-act="quick-add" data-id="${g.id}" aria-label="Log 1 ${esc(uN(1, g.unit))} for ${esc(g.name)}">${IC.plus}</button>` : ""}</div>`;
 }
 function topbar(){
@@ -1083,7 +1201,8 @@ function viewHome(){
   const inGroup = new Set(active.filter(g => g.type === "group").flatMap(g => g.childIds || []));
   const all = active.filter(g => g.type !== "group").map(g => calc(g));
   const cur = all.filter(k => !k.finished && !k.ended);
-  html += `<div class="summary"><div><b>${cur.filter(k => k.st === "ahead").length}</b>on track</div><div><b class="${cur.some(k => k.st === "behind") ? "st-behind" : ""}">${cur.filter(k => k.st === "behind").length}</b>behind</div><div><b>${all.filter(k => k.finished).length}</b>done</div></div>`;
+  const nOn = cur.filter(k => k.st === "ahead").length, nBe = cur.filter(k => k.st === "behind").length, nDone = all.filter(k => k.finished).length, nRest = Math.max(0, all.length - nOn - nBe - nDone);
+  html += `<div class="summary"><div><b>${cur.filter(k => k.st === "ahead").length}</b>on track</div><div><b class="${cur.some(k => k.st === "behind") ? "st-behind" : ""}">${cur.filter(k => k.st === "behind").length}</b>behind</div><div><b>${all.filter(k => k.finished).length}</b>done</div>${all.length ? `<div class="segbar thin" aria-hidden="true">${nOn ? `<i class="on" style="flex:${nOn}"></i>` : ""}${nBe ? `<i class="off" style="flex:${nBe}"></i>` : ""}${nDone ? `<i class="done" style="flex:${nDone}"></i>` : ""}${nRest ? `<i style="flex:${nRest}"></i>` : ""}</div>` : ""}</div>`;
   if (S.goals.some(g => g.example)) html += `<div class="banner"><span>These are example goals.</span><button class="link" data-act="clear-examples" style="padding:0">Remove them</button></div>`;
   if (new Date().getDay() === 1 && !S.dismissed[`review:day:${mondayOf(todayKey())}`]) html += `<div class="sug"><div>New week. Want to see how last week went?</div><div class="btn-row"><button class="btn sm" data-act="open-review">See last week</button><button class="btn sm ghost" data-act="sug-dismiss" data-id="review" data-v="day">Not now</button></div></div>`;
   const areas = [...new Set(active.map(g => g.area).filter(Boolean))].sort();
@@ -1145,12 +1264,12 @@ function heroTotalSum(g, k){
     : side(`${fmt(round1(Math.abs(k.margin)))} ${u}`, less ? (k.margin >= 0 ? "to spare" : "over budget") : (k.margin >= 0 ? "ahead of plan" : "behind plan"), k.margin >= 0 ? "st-ahead" : "st-behind");
   return `<div class="card">
     <div class="hero-top"><div class="big-wrap"><span class="big">${fmt(k.done)}</span><span class="of">of ${fmt(g.to)} ${u}${less ? " allowed" : ""}${k.dropped ? ` · ${fmt(k.dropped)} ${less ? "forgiven" : "let go"}` : ""}</span></div><div class="hero-side">${sd}</div></div>
-    ${chartTotalSum(g, k)}${fcLine(k)}
+    ${chartTotalSum(g, k)}${fcViz(g, k)}
     ${legend([["line", "You"], ["dash", less ? "Allowance" : "Plan"], ...(less ? [["limit", "Limit"]] : []), ...(k.fc && k.fc.line ? [["proj", "Forecast"]] : [])])}
     <div class="stats3">
       ${stat(less ? "Allowed" : "Plan", `${fmt(round1(k.perOcc))} ${esc(uN(round1(k.perOcc), g.unit))}`, ph)}
       ${stat(less ? "Still allowed" : "Needed", live ? `${fmt(round1(k.needOcc))} ${u}` : "–", live ? ph : "")}
-      ${stat(k.margin >= 0 ? (less ? "To spare" : "Ahead by") : (less ? "Over by" : "Behind by"), live ? fmt(bu) : "–", live ? plural(bu, k.bufUnit) : "")}
+      ${live && Math.abs(k.margin) < k.thr ? stat(less ? "Budget" : "Pace", less ? "On budget" : "On plan") : stat(k.margin >= 0 ? (less ? "To spare" : "Ahead by") : (less ? "Over by" : "Behind by"), live ? fmt(bu) : "–", live ? plural(bu, k.bufUnit) : "")}
     </div></div>`;
 }
 function barsTotalSum(g, k){
@@ -1158,12 +1277,12 @@ function barsTotalSum(g, k){
   const accOf = i => k.carryOn && o_started(k, i) && Math.abs(k.tgt(i) - k.plans[i]) > 0.05 ? k.tgt(i) : null;
   const items = k.W.map((o, i) => { const done = k.res[i] || 0, tg = k.tgt(i); return {plan:k.plans[i], acc:accOf(i), done, now:i === k.curI, miss:less ? done > tg + 1e-9 : false, label:barLabel(k, o, i),
     title:`${spanText(o)}: ${fmt(done)} of ${fmt(round1(tg))} ${g.unit}${less ? " allowed" : ""}${accOf(i) != null ? ` (${carryNote(g, k.plans[i], tg - k.plans[i])})` : ""}`}; });
-  const daysLeft = now ? diffDays(t, now.b) + 1 : 0, note = now && k.carryOn ? carryNote(g, k.plans[k.curI], k.carry) : "";
-  const line = now ? `${k.O.Now}: <b>${fmt(k.res[k.curI] || 0)} of ${fmt(round1(k.tgt(k.curI)))} ${u}</b>${less ? " allowed" : ""}${note ? ` (${note})` : ""}${now.a !== now.b ? `, ${daysLeft} ${plural(daysLeft, "day")} left` : ""}.`
-    : k.nextI >= 0 && k.started ? `Next: <b>${spanText(k.W[k.nextI])}</b>.` : "";
+  const daysLeft = now ? diffDays(t, now.b) + 1 : 0;
+  const meter = now && !k.finished ? weekMeter(g, {base:k.plans[k.curI], carry:k.carryOn ? k.carry : 0, done:k.res[k.curI] || 0, title:`${k.O.Now}${now.a !== now.b ? ` <span class="muted">· ${daysLeft} ${plural(daysLeft, "day")} left</span>` : ""}`}) : "";
+  const line = !now && k.nextI >= 0 && k.started ? `Next: <b>${spanText(k.W[k.nextI])}</b>.` : "";
   const hasAcc = items.some(i => i.acc != null);
   return `<div class="card"><div class="card-title">${k.O.title}</div>
-    ${planBars(items)}${legend([...(less ? [["box plan", "Allowed"], ["box", "Used"], ["box miss", "Over"]] : [["box plan", "Plan"], ["box", "Done"]]), ...(hasAcc ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
+    ${meter}${planBars(items)}${legend([...(less ? [["box plan", "Allowed"], ["box", "Used"], ["box miss", "Over"]] : [["box plan", "Plan"], ["box", "Done"]]), ...(hasAcc ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
 }
 function monthsCard(g, k){
   if (typLen(k.r) >= 28) return "";
@@ -1181,7 +1300,7 @@ function heroTotalOne(g, k){
     : side(`${fmt(round1(Math.abs(k.margin)))} ${u}`, k.margin >= 0 ? "ahead of plan" : "behind plan", k.margin >= 0 ? "st-ahead" : "st-behind");
   return `<div class="card">
     <div class="hero-top"><div class="big-wrap"><span class="big">${esc(k.valText)}</span><span class="of">${u} · goal ${fmt(k.to)}</span></div><div class="hero-side">${sd}</div></div>
-    ${chartTotalOne(g, k)}${fcLine(k)}
+    ${chartTotalOne(g, k)}${fcViz(g, k)}
     ${legend([["line", "You"], ["dash", "Plan"], ["goal", "Goal"], ...(k.fc && k.fc.line ? [["proj", "Forecast"]] : [])])}
     <div class="stats3">
       ${stat("Started at", `${fmt(k.from)} ${u}`)}
@@ -1206,14 +1325,14 @@ function heroPeriod(g, k){
     : side(`${O.Cap} ${k.focusI + 1}`, `of ${k.n}`);
   const big = between ? `<span class="big">${fmt(k.focusLevel)}</span><span class="of">${u} ${less ? "max" : "target"}, next ${WD[wdOf(k.focus.a)]} ${fmtD(k.focus.a)}</span>`
     : `<span class="big">${esc(k.valText)}</span><span class="of">${less ? "of max" : "of"} ${fmt(k.focusLevel)} ${u} ${O.now}</span>`;
-  const cn = k.carryOn && k.started && !k.ended ? carryNote(g, k.base0, k.carry) : "";
+  const meter = !k.one && k.started && !k.ended && k.focus ? weekMeter(g, {base:k.base0, carry:k.carryOn ? k.carry : 0, done:k.curI >= 0 ? (k.curRes || 0) : 0}) : "";
   const stats = k.change
     ? stat("Start → goal", `${fmt(k.from)} → ${fmt(k.to)} ${u}`) + stat("Change", `${fmtS(g.step)} ${u}`, stepPhrase(g)) + stat(less ? "Lowest so far" : "Best so far", k.best == null ? "–" : `${fmt(k.best)} ${u}`)
-    : stat(less ? "Limit" : "Goal", `${fmt(k.to)} ${esc(uN(k.to, g.unit))}`, perPhrase(g.rep)) + (k.carryOn ? stat(less ? "Saved up" : "Carried over", `${k.carry > 0 ? (less ? "" : "+") : k.carry < 0 ? "−" : ""}${fmt(round1(Math.abs(k.carry)))} ${u}`, less ? (k.carry < 0 ? "over earlier" : "unused allowance") : (k.carry < 0 ? "done ahead" : "from earlier")) : "") + stat("Hit so far", `${k.metPast} of ${k.lastPast + 1}`, O.many)
-      + (k.carryOn ? "" : k.missed ? stat("Missed in a row", String(k.missed), O.many) : stat("Still to go", String(Math.max(0, k.n - k.lastPast - 1)), O.many));
+    : stat(less ? "Limit" : "Goal", `${fmt(k.to)} ${esc(uN(k.to, g.unit))}`, perPhrase(g.rep)) + statRaw("Hit so far", `${k.metPast} of ${k.lastPast + 1}`, hitStrip(g, k, 12) || O.many)
+      + (k.missed ? stat("Missed in a row", String(k.missed), O.many) : stat("Still to go", String(Math.max(0, k.n - k.lastPast - 1)), O.many));
   return `<div class="card">
     <div class="hero-top"><div class="big-wrap">${big}</div><div class="hero-side">${sd}</div></div>
-    ${cn ? `<div class="carry-note">${esc(cn)}</div>` : ""}
+    ${meter}
     ${chartPeriod(g, k)}
     ${legend([["dash", less ? "Limit" : "Target"], ...(k.accShown ? [["acc", "With carry-over"]] : []), ["dot", "On target"], ["dot miss", less ? "Over" : "Missed"]])}
     <div class="stats3">${stats}</div></div>`;
@@ -1223,9 +1342,7 @@ function barsPeriod(g, k){
   const items = k.W.map((o, i) => { const v = k.resV(i), now = i === k.curI, tg = k.tgt(i), acc = k.carryOn && o.a <= t && Math.abs(tg - k.lv(o)) > 0.05 ? tg : null;
     return {plan:k.lv(o), acc, done:o.a > t ? 0 : v || 0, now, miss:v != null && o.a <= t && !k.met(i) && (!now || less), label:barLabel(k, o, i),
       title:`${O.Cap} ${i + 1} (${spanText(o)}): ${less ? "max" : "target"} ${fmt(tg)}${acc != null ? ` (${carryNote(g, k.lv(o), tg - k.lv(o))})` : ""}${v != null ? `, you did ${fmt(v)}` : ""}`}; });
-  const line = !k.started || k.ended ? ""
-    : k.curI >= 0 ? `${O.Now}: <b>${less ? "max " : ""}${fmt(k.focusLevel)} ${u}</b>${k.curRes != null ? `. You're at ${fmt(k.curRes)}` : ""}.`
-    : k.focus ? `Next ${O.one}: <b>${spanText(k.focus)}</b>, ${less ? "max" : "target"} ${fmt(k.focusLevel)} ${u}.` : "";
+  const line = "";
   const [base] = yRange([k.from, k.to, ...k.W.map((o, i) => k.resV(i)).filter(v => v != null)], k.one);
   return `<div class="card"><div class="card-title">${O.title}</div>
     ${planBars(items, base)}${legend([["box plan", less ? "Limit" : "Target"], ["box", "You"], ["box miss", less ? "Over" : "Missed"], ...(items.some(i => i.acc != null) ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
@@ -1675,27 +1792,31 @@ function sheetReview(){
   const goals = S.goals.filter(g => !g.archived && g.type !== "group" && (g.start || "") <= b && (g.type === "milestone" || g.end >= a));
   const rows = goals.map(g => {
     const k = calc(g), u = esc(g.unit || "");
-    let main = "", cls = "muted", next = "";
+    let main = "", cls = "muted", next = "", viz = "";
     if (g.type === "milestone") {
       const n = (g.steps || []).filter(s => s.done && s.doneAt >= a && s.doneAt <= b).length;
-      main = n ? `${n} ${plural(n, "step")} done` : "No steps done"; cls = n ? "st-ahead" : "muted"; next = k.next ? `Next: ${esc(k.next.title)}` : "";
+      main = n ? `${n} ${plural(n, "step")}` : "0 steps"; cls = n ? "" : "muted"; next = k.next ? `Next: ${esc(k.next.title)}` : "";
+      viz = `<span class="strip">${(g.steps || []).map(st => `<i class="${st.done && st.doneAt >= a && st.doneAt <= b ? "on" : st.done ? "past" : ""}"></i>`).join("")}</span>`;
     } else if (k.kind === "tsum") {
       const done = sumIn(k.logs, a, b), plan = k.perW * (k.elapsed(b) - k.elapsed(addDays(a, -1)));
       const ok = g.less ? done <= plan + 1e-9 : done >= plan - 1e-9;
-      main = `${fmt(done)} of ${fmt(round1(plan))} ${u}${g.less ? " allowed" : ""}`; cls = ok ? "st-ahead" : "st-behind";
+      main = `${fmt(done)} / ${fmt(round1(plan))} ${u}`; cls = ok ? "" : "st-behind"; viz = miniBar(done, plan, g.less);
       if (!k.finished && !k.over && !k.ended) next = k.carryOn && k.curI >= 0 && typLen(k.r) === 7 ? `This week: ${g.less ? "up to " : ""}${fmt(round1(k.tgt(k.curI)))} ${u}` : `This week: ${g.less ? "up to " : "about "}${fmt(round1(k.needOcc / typLen(k.r) * 7))} ${u}`;
     } else if (k.kind === "tone") {
       const upTo = d => { let v = null; for (const e of k.seq) if (e.date <= d) v = e.value; return v; };
       const before = upTo(addDays(a, -1)) ?? g.from, after = upTo(b), ch = after == null ? null : round2(after - before);
-      main = ch == null ? "No entries" : `${fmtS(ch)} ${u}, now ${fmt(after)}`; cls = ch == null ? "muted" : (g.to - before) * ch > 0 ? "st-ahead" : ch === 0 ? "muted" : "st-behind";
-      next = `Goal: ${fmt(g.to)} ${u}`;
+      main = ch == null ? "No entries" : `${fmtS(ch)} ${u}`; cls = ch == null ? "muted" : (g.to - before) * ch > 0 ? "st-ahead" : ch === 0 ? "muted" : "st-behind";
+      next = after == null ? `Goal ${fmt(g.to)} ${u}` : `Now ${fmt(after)} · goal ${fmt(g.to)} ${u}`;
+      const pts = k.seq.filter(e => e.date >= addDays(a, -21) && e.date <= b).map(e => e.value);
+      if (pts.length > 1) { const lo = Math.min(...pts, g.to), hi = Math.max(...pts, g.to), yy = v => 18 - (v - lo) / ((hi - lo) || 1) * 16; viz = `<svg class="spark" viewBox="0 0 64 20" aria-hidden="true"><polyline points="${pts.map((v, i) => `${(i / (pts.length - 1) * 62 + 1).toFixed(1)},${yy(v).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><line x1="1" x2="63" y1="${yy(g.to).toFixed(1)}" y2="${yy(g.to).toFixed(1)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/></svg>`; }
     } else if (k.kind === "period") {
       const ws = k.W.map((o, i) => [o, i]).filter(([o]) => o.b >= a && o.b <= b);
       const hit = ws.filter(([, i]) => k.met(i)).length;
-      main = ws.length ? `Hit ${hit} of ${ws.length} ${ws.length === 1 ? k.O.one : k.O.many}` : "Nothing due"; cls = !ws.length ? "muted" : hit === ws.length ? "st-ahead" : "st-behind";
+      main = ws.length ? `${hit}/${ws.length}` : "Nothing due"; cls = !ws.length ? "muted" : hit === ws.length ? "" : "st-behind";
+      viz = ws.length ? `<span class="strip">${ws.map(([, i]) => `<i class="${k.met(i) ? "on" : "off"}"></i>`).join("")}</span>` : "";
       next = k.ended ? "" : esc(k.status);
     }
-    return `<div class="row-line"><div class="row-main"><div class="row-title">${esc(g.name)}</div>${next ? `<div class="row-sub">${next}</div>` : ""}</div><div class="rv ${cls}">${main}</div></div>`;
+    return `<div class="rv-row"><div class="row-main"><div class="row-title">${esc(g.name)}</div>${next ? `<div class="row-sub">${next}</div>` : ""}</div><div class="rv-viz">${viz}</div><div class="rv ${cls}">${main}</div></div>`;
   });
   return `<div class="grab"></div><div class="sheet-head"><div><div class="sh-title">Last week</div><div class="sh-sub">${fmtD(a)} – ${fmtD(b)}</div></div>${closeX}</div>
     <div>${rows.join("") || `<div class="note">No goals were running last week.</div>`}</div>`;
@@ -1708,6 +1829,7 @@ function sheetHistory(){
   const tot = Object.entries(totals).sort((x, y) => y[1] - x[1]).map(([u, v]) => `<div><div class="v">${fmt(round1(v))}</div><div class="s">${esc(u)}</div></div>`).join("");
   return `<div class="grab"></div><div class="sheet-head"><div class="sh-title">History</div>${closeX}</div>
     <div class="stats3" style="border-top:0;padding-top:0">${stat("Reached", String(hit))}${stat("Not reached", String(done.length - hit))}${stat("Entries", String(allLogs().length))}</div>
+    ${done.length ? `<div class="segbar" role="img" aria-label="${hit} reached, ${done.length - hit} not reached">${hit ? `<i class="on" style="flex:${hit}"></i>` : ""}${done.length - hit ? `<i class="off" style="flex:${done.length - hit}"></i>` : ""}</div>` : ""}
     ${tot ? `<div class="field"><span class="flabel">Logged so far</span><div class="totals">${tot}</div></div>` : ""}
     <div class="field"><span class="flabel">Finished goals</span>${done.length ? `<div>${done.map(([g, k]) => `<div class="row-line"><div class="row-main"><div class="row-title">${esc(g.name)}</div><div class="row-sub">${g.end ? `Ended ${fmtDY(g.end)}` : ""}${g.archived ? " · archived" : ""}</div></div><div class="rv st-${k.st}">${esc(k.status)}</div></div>`).join("")}</div>` : `<div class="note">Nothing finished yet. Your finished goals will show up here.</div>`}</div>`;
 }
