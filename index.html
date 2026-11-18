@@ -808,12 +808,13 @@ function calcPeriod(g, k){
   const focusLevel = focus ? tgt(focusI) : to, focusStep = focus ? stepIdx(g, focus) : 0;
   const curRes = curI >= 0 ? resV(curI) : null, curMet = curI >= 0 && met(curI);
   let reachedStep = -1, aheadSteps = 0;
-  if (change && !less) {
+  if (change && !less && k.one) {
     for (const o of W) if (k.reaches(best, lv(o))) reachedStep = Math.max(reachedStep, stepIdx(g, o));
     const doneLately = curI >= 0 ? curMet : lastPast >= 0 && met(lastPast);
     aheadSteps = doneLately ? Math.max(0, reachedStep - focusStep) : 0;
   }
-  const finished = change && !less ? best != null && k.reaches(best, to) : ended && n > 0 && metPast === n;
+  const levelGoal = change && k.one;   // the level is a single result you can reach early; otherwise progress = periods on target
+  const finished = levelGoal && !less ? best != null && k.reaches(best, to) : ended && n > 0 && metPast === n;
   const su = stepUnit(g), amt = v => `${fmt(v)} ${uN(v, u)}`;
   let status, st;
   if (!n) { status = "No days match the schedule"; st = "neutral"; }
@@ -833,8 +834,8 @@ function calcPeriod(g, k){
   const metCount = metPast + (curMet && !less ? 1 : 0), elapsedN = lastPast + 1 + (curI >= 0 ? 1 : 0);
   const carryNow = focus ? ct.car[focusI] : 0, tag = useCarry && started && !ended ? carryTag(g, carryNow) : "";
   return Object.assign(k, {kind:"period", change, from, to, lv, tgt, base0:focus ? base[focusI] : to, carry:carryNow, carryOn:useCarry, resV, met, best, missed, metPast, lastPast, focusI, focus, focusLevel, curRes, curMet, reachedStep, aheadSteps, finished, st, status,
-    pct:change ? (best == null ? 0 : clamp((best - from) / range, 0, 1)) : n ? metCount / n : 0,
-    pacePct:!started || ended || finished || !n ? null : change ? clamp((focusLevel - from) / range, 0, 1) : clamp(elapsedN / n, 0, 1),
+    pct:levelGoal ? (best == null ? 0 : clamp((best - from) / range, 0, 1)) : n ? metCount / n : 0,
+    pacePct:!started || ended || finished || !n ? null : levelGoal ? clamp((focusLevel - from) / range, 0, 1) : clamp((lastPast + 1) / n, 0, 1),
     valText:curRes == null ? (k.one ? "–" : "0") : fmt(curRes), ofText:less ? ` of max ${fmt(focusLevel)} ${u}` : ` / ${fmt(focusLevel)} ${u}`,
     kindText:!started ? `Starts ${fmtD(g.start)}` : ended ? `Ended ${fmtD(g.end)}` : `${O.Cap} ${focusI + 1} of ${n}${tag ? ` · ${tag}` : ""}`});
 }
@@ -1327,7 +1328,7 @@ function heroPeriod(g, k){
     : `<span class="big">${esc(k.valText)}</span><span class="of">${less ? "of max" : "of"} ${fmt(k.focusLevel)} ${u} ${O.now}</span>`;
   const meter = !k.one && k.started && !k.ended && k.focus ? weekMeter(g, {base:k.base0, carry:k.carryOn ? k.carry : 0, done:k.curI >= 0 ? (k.curRes || 0) : 0}) : "";
   const stats = k.change
-    ? stat("Start → goal", `${fmt(k.from)} → ${fmt(k.to)} ${u}`) + stat("Change", `${fmtS(g.step)} ${u}`, stepPhrase(g)) + stat(less ? "Lowest so far" : "Best so far", k.best == null ? "–" : `${fmt(k.best)} ${u}`)
+    ? stat("Start → goal", `${fmt(k.from)} → ${fmt(k.to)} ${u}`) + stat("Change", `${fmtS(g.step)} ${u}`, stepPhrase(g)) + (k.one ? stat(less ? "Lowest so far" : "Best so far", k.best == null ? "–" : `${fmt(k.best)} ${u}`) : statRaw("Hit so far", `${k.metPast} of ${k.lastPast + 1}`, hitStrip(g, k, 12) || O.many))
     : stat(less ? "Limit" : "Goal", `${fmt(k.to)} ${esc(uN(k.to, g.unit))}`, perPhrase(g.rep)) + statRaw("Hit so far", `${k.metPast} of ${k.lastPast + 1}`, hitStrip(g, k, 12) || O.many)
       + (k.missed ? stat("Missed in a row", String(k.missed), O.many) : stat("Still to go", String(Math.max(0, k.n - k.lastPast - 1)), O.many));
   return `<div class="card">
