@@ -27,14 +27,14 @@ img{max-width:100%}
    Theme: light by default; dark is a setting in the app (data-app-theme on <html>), not the OS. */
 :root{
   --bg:#FFFFFF; --card:#FFFFFF; --ink:#101114; --muted:#686A72; --line:#E3E4E8; --track:#EDEEF1; --ghost:#C9CCD3;
-  --accent:#2B59F0; --accent-text:#1F47C9; --accent-soft:rgba(43,89,240,.12); --on-accent:#FFFFFF;
+  --accent:#2B59F0; --accent-text:#1F47C9; --accent-soft:rgba(43,89,240,.12); --on-accent:#FFFFFF; --beat:#142E8C;
   --behind:#9A5800; --behind-soft:rgba(154,88,0,.12); --danger:#C2363F; --scrim:rgba(16,17,20,.36); --shadow:0 18px 50px rgba(16,17,20,.16);
   --font:"Geist",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:var(--font);
 }
 :root[data-app-theme="dark"]{
   --bg:#0C0D10; --card:#131419; --ink:#F1F2F4; --muted:#9A9CA4; --line:#26282E; --track:#202227; --ghost:#3E4148;
-  --accent:#5C83FF; --accent-text:#8AA6FF; --accent-soft:rgba(92,131,255,.2); --on-accent:#0C0D10;
+  --accent:#5C83FF; --accent-text:#8AA6FF; --accent-soft:rgba(92,131,255,.2); --on-accent:#0C0D10; --beat:#B8C8FF;
   --behind:#F0B45A; --behind-soft:rgba(240,180,90,.18); --danger:#FF7A7F; --scrim:rgba(0,0,0,.6); --shadow:0 18px 50px rgba(0,0,0,.5);
   color-scheme:dark;
 }
@@ -186,6 +186,11 @@ h1,h2,h3,h4,p{margin:0}
 .strip i{width:9px;height:9px;border-radius:2px;background:var(--track)}
 .strip i.on{background:var(--accent)} .strip i.off{background:var(--behind)} .strip i.past{background:var(--accent-soft)}
 .strip i.cur{background:none;box-shadow:inset 0 0 0 1.5px var(--ink)}
+.strip{align-items:flex-end}
+.strip i.beat{background:var(--beat);height:13px}
+.bdone.beat{background:var(--beat)}
+.legend i.box.beat{background:var(--beat)}
+.legend i.dot.beat{background:var(--beat)}
 .stats3 .s .strip{margin-top:4px}
 .gr-meta{display:inline-flex;align-items:center;gap:8px}
 .mini{position:relative;display:block;width:72px;height:8px;border-radius:4px;background:var(--track)}
@@ -800,6 +805,7 @@ function calcPeriod(g, k){
   const ct = useCarry ? carryTargets(g, W, base, res, upto) : {eff:base, car:base.map(() => 0)};
   const tgt = i => i <= upto ? ct.eff[i] : base[i];
   const met = i => (!less && !k.one && tgt(i) <= 1e-9) || k.reaches(resV(i) ?? (k.one ? null : 0), tgt(i));
+  const beat = i => { const v = resV(i) ?? (k.one ? null : 0), tg = tgt(i); if (v == null) return false; const tol = Math.max(0.01, Math.abs(tg) * 0.05); return less ? v < tg - tol : v > tg + tol; };
   const lastPast = (curI >= 0 ? curI : nextI >= 0 ? nextI : n) - 1;
   let missed = 0; if (started) for (let i = lastPast; i >= 0 && !met(i); i--) missed++;
   let metPast = 0; for (let i = 0; i <= lastPast; i++) if (met(i)) metPast++;
@@ -833,7 +839,7 @@ function calcPeriod(g, k){
   const range = (to - from) || 1;
   const metCount = metPast + (curMet && !less ? 1 : 0), elapsedN = lastPast + 1 + (curI >= 0 ? 1 : 0);
   const carryNow = focus ? ct.car[focusI] : 0, tag = useCarry && started && !ended ? carryTag(g, carryNow) : "";
-  return Object.assign(k, {kind:"period", change, from, to, lv, tgt, base0:focus ? base[focusI] : to, carry:carryNow, carryOn:useCarry, resV, met, best, missed, metPast, lastPast, focusI, focus, focusLevel, curRes, curMet, reachedStep, aheadSteps, finished, st, status,
+  return Object.assign(k, {kind:"period", beat, change, from, to, lv, tgt, base0:focus ? base[focusI] : to, carry:carryNow, carryOn:useCarry, resV, met, best, missed, metPast, lastPast, focusI, focus, focusLevel, curRes, curMet, reachedStep, aheadSteps, finished, st, status,
     pct:levelGoal ? (best == null ? 0 : clamp((best - from) / range, 0, 1)) : n ? metCount / n : 0,
     pacePct:!started || ended || finished || !n ? null : levelGoal ? clamp((focusLevel - from) / range, 0, 1) : clamp((lastPast + 1) / n, 0, 1),
     valText:curRes == null ? (k.one ? "–" : "0") : fmt(curRes), ofText:less ? ` of max ${fmt(focusLevel)} ${u}` : ` / ${fmt(focusLevel)} ${u}`,
@@ -1013,10 +1019,12 @@ function hitStrip(g, k, maxN){
   if (last < 0) return "";
   let h = "";
   for (let i = Math.max(0, last - maxN + 1); i <= last; i++) {
-    const cur = i === k.curI, ok = k.met(i), cls = cur ? (ok && !g.less ? "on" : "cur") : ok ? "on" : "off";
+    const cur = i === k.curI, ok = k.met(i), bt = ok && k.beat(i);
+    const cls = cur ? (g.less ? (ok ? "cur" : "off") : bt ? "beat" : ok ? "on" : "cur") : bt ? "beat" : ok ? "on" : "off";
     h += `<i class="${cls}"></i>`;
   }
-  return `<span class="strip" role="img" aria-label="${k.metPast} of ${k.lastPast + 1} ${k.O.many} on target">${h}</span>`;
+  let nb = 0; for (let i = 0; i <= k.lastPast; i++) if (k.met(i) && k.beat(i)) nb++;
+  return `<span class="strip" role="img" aria-label="${k.metPast} of ${k.lastPast + 1} ${k.O.many} on target${nb ? `, ${nb} ${g.less ? "well under the limit" : "above target"}` : ""}">${h}</span>`;
 }
 const miniBar = (v, target, less) => {
   const S = Math.max(v, target) || 1, ok = less ? v <= target + 1e-9 : v >= target - 1e-9;
@@ -1108,8 +1116,9 @@ function chartPeriod(g, k){
   let dots = "";
   k.W.forEach((o, i) => {
     const v = k.resV(i); if (v == null || o.a > t) return;
-    const ok = k.met(i), now = i === k.curI, cx = x(diffDays(g.start, o.a) + o.len / 2);
-    const fill = ok ? "var(--accent)" : now && !k.less ? "var(--card)" : "var(--behind)", stroke = ok || (now && !k.less) ? "var(--accent)" : "var(--behind)";
+    const ok = k.met(i), now = i === k.curI, cx = x(diffDays(g.start, o.a) + o.len / 2), bt = ok && k.beat(i) && !(now && k.less);
+    if (bt) k.beatShown = true;
+    const fill = bt ? "var(--beat)" : ok ? "var(--accent)" : now && !k.less ? "var(--card)" : "var(--behind)", stroke = bt ? "var(--beat)" : ok || (now && !k.less) ? "var(--accent)" : "var(--behind)";
     dots += `<circle cx="${cx.toFixed(1)}" cy="${y(v).toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${r > 3 ? 2 : 1.5}"/>`;
   });
   const tx = x(clamp(diffDays(g.start, t) + 0.5, 0, k.days));
@@ -1124,7 +1133,7 @@ function planBars(items, base = 0){
   const max = Math.max(base + 1e-9, ...items.map(i => Math.max(i.plan, i.done || 0, i.acc || 0)));
   const px = v => `${Math.max(0, (v - base) / (max - base) * 86).toFixed(1)}px`;
   return `<div class="bars-scroll" data-scroll-now><div class="bars">${items.map(i => `<div class="bcol" ${i.now ? "data-now" : ""} title="${esc(i.title)}">
-    <div class="bbox"><div class="bplan" style="height:${px(i.plan)}"></div>${i.done ? `<div class="bdone ${i.miss ? "miss" : i.now ? "now" : ""}" style="height:${px(i.done)}"></div>` : ""}${i.acc != null ? `<div class="bacc" style="bottom:${px(i.acc)}"></div>` : ""}</div>
+    <div class="bbox"><div class="bplan" style="height:${px(i.plan)}"></div>${i.done ? `<div class="bdone ${i.miss ? "miss" : i.beat ? "beat" : i.now ? "now" : ""}" style="height:${px(i.done)}"></div>` : ""}${i.acc != null ? `<div class="bacc" style="bottom:${px(i.acc)}"></div>` : ""}</div>
     <span class="blab ${i.now ? "now" : ""}">${i.label}</span></div>`).join("")}</div></div>`;
 }
 const o_started = (k, i) => k.W[i].a <= todayKey() || i === k.nextI;
@@ -1276,14 +1285,15 @@ function heroTotalSum(g, k){
 function barsTotalSum(g, k){
   const t = todayKey(), less = g.less, u = esc(g.unit), now = k.curI >= 0 ? k.W[k.curI] : null;
   const accOf = i => k.carryOn && o_started(k, i) && Math.abs(k.tgt(i) - k.plans[i]) > 0.05 ? k.tgt(i) : null;
-  const items = k.W.map((o, i) => { const done = k.res[i] || 0, tg = k.tgt(i); return {plan:k.plans[i], acc:accOf(i), done, now:i === k.curI, miss:less ? done > tg + 1e-9 : false, label:barLabel(k, o, i),
+  const items = k.W.map((o, i) => { const done = k.res[i] || 0, tg = k.tgt(i), tol = Math.max(0.01, tg * 0.05), past = o.b < t || i === k.curI;
+    return {plan:k.plans[i], acc:accOf(i), done, now:i === k.curI, beat:past && (less ? o.b < t && done < tg - tol : done > tg + tol), miss:less ? done > tg + 1e-9 : false, label:barLabel(k, o, i),
     title:`${spanText(o)}: ${fmt(done)} of ${fmt(round1(tg))} ${g.unit}${less ? " allowed" : ""}${accOf(i) != null ? ` (${carryNote(g, k.plans[i], tg - k.plans[i])})` : ""}`}; });
   const daysLeft = now ? diffDays(t, now.b) + 1 : 0;
   const meter = now && !k.finished ? weekMeter(g, {base:k.plans[k.curI], carry:k.carryOn ? k.carry : 0, done:k.res[k.curI] || 0, title:`${k.O.Now}${now.a !== now.b ? ` <span class="muted">· ${daysLeft} ${plural(daysLeft, "day")} left</span>` : ""}`}) : "";
   const line = !now && k.nextI >= 0 && k.started ? `Next: <b>${spanText(k.W[k.nextI])}</b>.` : "";
   const hasAcc = items.some(i => i.acc != null);
   return `<div class="card"><div class="card-title">${k.O.title}</div>
-    ${meter}${planBars(items)}${legend([...(less ? [["box plan", "Allowed"], ["box", "Used"], ["box miss", "Over"]] : [["box plan", "Plan"], ["box", "Done"]]), ...(hasAcc ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
+    ${meter}${planBars(items)}${legend([...(less ? [["box plan", "Allowed"], ["box", "Used"], ["box miss", "Over"]] : [["box plan", "Plan"], ["box", "Done"]]), ...(items.some(i => i.beat) ? [["box beat", less ? "Well under" : "Above plan"]] : []), ...(hasAcc ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
 }
 function monthsCard(g, k){
   if (typLen(k.r) >= 28) return "";
@@ -1335,18 +1345,18 @@ function heroPeriod(g, k){
     <div class="hero-top"><div class="big-wrap">${big}</div><div class="hero-side">${sd}</div></div>
     ${meter}
     ${chartPeriod(g, k)}
-    ${legend([["dash", less ? "Limit" : "Target"], ...(k.accShown ? [["acc", "With carry-over"]] : []), ["dot", "On target"], ["dot miss", less ? "Over" : "Missed"]])}
+    ${legend([["dash", less ? "Limit" : "Target"], ...(k.accShown ? [["acc", "With carry-over"]] : []), ["dot", "On target"], ...(k.beatShown ? [["dot beat", less ? "Well under" : "Above target"]] : []), ["dot miss", less ? "Over" : "Missed"]])}
     <div class="stats3">${stats}</div></div>`;
 }
 function barsPeriod(g, k){
   const u = esc(g.unit), O = k.O, t = todayKey(), less = g.less;
   const items = k.W.map((o, i) => { const v = k.resV(i), now = i === k.curI, tg = k.tgt(i), acc = k.carryOn && o.a <= t && Math.abs(tg - k.lv(o)) > 0.05 ? tg : null;
-    return {plan:k.lv(o), acc, done:o.a > t ? 0 : v || 0, now, miss:v != null && o.a <= t && !k.met(i) && (!now || less), label:barLabel(k, o, i),
+    return {plan:k.lv(o), acc, done:o.a > t ? 0 : v || 0, now, beat:o.a <= t && k.met(i) && k.beat(i) && !(now && less), miss:v != null && o.a <= t && !k.met(i) && (!now || less), label:barLabel(k, o, i),
       title:`${O.Cap} ${i + 1} (${spanText(o)}): ${less ? "max" : "target"} ${fmt(tg)}${acc != null ? ` (${carryNote(g, k.lv(o), tg - k.lv(o))})` : ""}${v != null ? `, you did ${fmt(v)}` : ""}`}; });
   const line = "";
   const [base] = yRange([k.from, k.to, ...k.W.map((o, i) => k.resV(i)).filter(v => v != null)], k.one);
   return `<div class="card"><div class="card-title">${O.title}</div>
-    ${planBars(items, base)}${legend([["box plan", less ? "Limit" : "Target"], ["box", "You"], ["box miss", less ? "Over" : "Missed"], ...(items.some(i => i.acc != null) ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
+    ${planBars(items, base)}${legend([["box plan", less ? "Limit" : "Target"], ["box", "You"], ...(items.some(i => i.beat) ? [["box beat", less ? "Well under" : "Above target"]] : []), ["box miss", less ? "Over" : "Missed"], ...(items.some(i => i.acc != null) ? [["acc", "With carry-over"]] : [])])}${line ? `<div class="note">${line}</div>` : ""}${dropLink(g, k)}</div>`;
 }
 function heroMilestone(g, k){
   return `<div class="card">
@@ -1814,7 +1824,7 @@ function sheetReview(){
       const ws = k.W.map((o, i) => [o, i]).filter(([o]) => o.b >= a && o.b <= b);
       const hit = ws.filter(([, i]) => k.met(i)).length;
       main = ws.length ? `${hit}/${ws.length}` : "Nothing due"; cls = !ws.length ? "muted" : hit === ws.length ? "" : "st-behind";
-      viz = ws.length ? `<span class="strip">${ws.map(([, i]) => `<i class="${k.met(i) ? "on" : "off"}"></i>`).join("")}</span>` : "";
+      viz = ws.length ? `<span class="strip">${ws.map(([, i]) => `<i class="${k.met(i) && k.beat(i) ? "beat" : k.met(i) ? "on" : "off"}"></i>`).join("")}</span>` : "";
       next = k.ended ? "" : esc(k.status);
     }
     return `<div class="rv-row"><div class="row-main"><div class="row-title">${esc(g.name)}</div>${next ? `<div class="row-sub">${next}</div>` : ""}</div><div class="rv-viz">${viz}</div><div class="rv ${cls}">${main}</div></div>`;
